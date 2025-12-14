@@ -68,7 +68,7 @@
 - [x] Implement compress (ONNX: Compress) - select elements based on condition
 - [x] Implement reduce_logsum (ONNX: ReduceLogSum) - log(sum(x))
 - [x] Implement bitwise operations (ONNX: BitShift, BitwiseAnd, BitwiseOr, BitwiseXor, BitwiseNot) - shl, shr, bitwise_and, bitwise_or, bitwise_xor, bitwise_not (integer only)
-- [ ] Implement lrn (ONNX: LRN) - Local Response Normalization (deprecated, rarely used)
+- [x] Implement lrn (ONNX: LRN) - Local Response Normalization (deprecated, rarely used)
 
 **Recurrent Layers:** (🔴 Critical)
 - [x] Implement RNN
