@@ -250,6 +250,67 @@ impl Tensor {
         }
     }
 
+    pub fn gather_nd(&self, indices: &Self) -> HoduResult<Self> {
+        let data_shape = self.shape();
+        let data_dims = data_shape.dims();
+        let data_ndim = data_dims.len();
+
+        let indices_shape = indices.shape();
+        let indices_dims = indices_shape.dims();
+        let indices_ndim = indices_dims.len();
+
+        if indices_ndim < 1 {
+            return Err(crate::error::HoduError::InvalidArgument(
+                "gather_nd: indices must have at least 1 dimension".to_string(),
+            ));
+        }
+
+        let k = indices_dims[indices_ndim - 1];
+        if k > data_ndim {
+            return Err(crate::error::HoduError::InvalidArgument(format!(
+                "gather_nd: indices last dim ({}) cannot exceed data ndim ({})",
+                k, data_ndim
+            )));
+        }
+
+        let batch_dims: Vec<usize> = indices_dims[..indices_ndim - 1].to_vec();
+        let batch_size: usize = batch_dims.iter().product::<usize>().max(1);
+
+        let slice_dims: Vec<usize> = data_dims[k..].to_vec();
+        let slice_size: usize = slice_dims.iter().product::<usize>().max(1);
+
+        // Compute strides for first k dimensions
+        let mut strides = vec![1usize; k];
+        for i in (0..k).rev() {
+            if i < k - 1 {
+                strides[i] = strides[i + 1] * data_dims[i + 1];
+            } else {
+                strides[i] = slice_size;
+            }
+        }
+
+        let indices_flat = indices.reshape([batch_size, k])?;
+
+        // Convert k-dimensional indices to linear indices
+        let strides_tensor =
+            Self::from_slice(strides.iter().map(|&s| s as i32).collect::<Vec<_>>(), [k])?.to_device(self.device())?;
+        let indices_i32 = indices_flat.to_dtype(DType::I32)?;
+        let weighted = indices_i32.mul(&strides_tensor)?;
+        let linear_indices = weighted.sum(&[1], false)?;
+
+        let indexed_size: usize = data_dims[..k].iter().product::<usize>().max(1);
+        let data_flat = self.reshape([indexed_size, slice_size])?;
+
+        let gathered = data_flat.index_select(0, &linear_indices)?;
+
+        let mut output_shape = batch_dims;
+        output_shape.extend(slice_dims);
+        if output_shape.is_empty() {
+            output_shape.push(1);
+        }
+        gathered.reshape(output_shape)
+    }
+
     pub fn scatter<D: Into<Scalar>>(&self, dim: D, indices: &Self, src: &Self) -> HoduResult<Self> {
         let dim_scalar = dim.into();
         let dim_i32 = dim_scalar.to_i32();
@@ -563,6 +624,67 @@ impl Tensor {
 
             Ok(result)
         }
+    }
+
+    pub fn scatter_nd(&self, indices: &Self, updates: &Self) -> HoduResult<Self> {
+        let data_shape = self.shape();
+        let data_dims = data_shape.dims();
+        let data_ndim = data_dims.len();
+
+        let indices_shape = indices.shape();
+        let indices_dims = indices_shape.dims();
+        let indices_ndim = indices_dims.len();
+
+        if indices_ndim < 1 {
+            return Err(crate::error::HoduError::InvalidArgument(
+                "scatter_nd: indices must have at least 1 dimension".to_string(),
+            ));
+        }
+
+        let k = indices_dims[indices_ndim - 1];
+        if k > data_ndim {
+            return Err(crate::error::HoduError::InvalidArgument(format!(
+                "scatter_nd: indices last dim ({}) cannot exceed data ndim ({})",
+                k, data_ndim
+            )));
+        }
+
+        let batch_dims: Vec<usize> = indices_dims[..indices_ndim - 1].to_vec();
+        let batch_size: usize = batch_dims.iter().product::<usize>().max(1);
+
+        let slice_dims: Vec<usize> = data_dims[k..].to_vec();
+        let slice_size: usize = slice_dims.iter().product::<usize>().max(1);
+
+        // Compute strides for first k dimensions
+        let mut strides = vec![1usize; k];
+        for i in (0..k).rev() {
+            if i < k - 1 {
+                strides[i] = strides[i + 1] * data_dims[i + 1];
+            } else {
+                strides[i] = slice_size;
+            }
+        }
+
+        let indices_flat = indices.reshape([batch_size, k])?;
+
+        // Convert to linear indices
+        let strides_tensor =
+            Self::from_slice(strides.iter().map(|&s| s as i32).collect::<Vec<_>>(), [k])?.to_device(self.device())?;
+        let indices_i32 = indices_flat.to_dtype(DType::I32)?;
+        let weighted = indices_i32.mul(&strides_tensor)?;
+        let linear_indices = weighted.sum(&[1], false)?;
+
+        let indexed_size: usize = data_dims[..k].iter().product::<usize>().max(1);
+        let data_flat = self.reshape([indexed_size, slice_size])?;
+
+        let updates_flat = updates.reshape([batch_size, slice_size])?;
+
+        // Expand linear_indices for scatter
+        let linear_indices_expanded = linear_indices.unsqueeze(-1)?.broadcast([batch_size, slice_size])?;
+
+        let result_flat = data_flat.scatter(0, &linear_indices_expanded, &updates_flat)?;
+
+        result_flat.reshape(data_dims.to_vec())
     }
 
     /// Convert integer indices to one-hot encoded vectors.

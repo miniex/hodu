@@ -49,8 +49,8 @@
 - [x] Implement isinf (ONNX: IsInf) - check for Inf values
 - [x] Implement unique (ONNX: Unique) - find unique elements
 - [x] Implement reduce_logsumexp (ONNX: ReduceLogSumExp) - numerically stable log(sum(exp(x)))
-- [ ] Implement scatter_nd (ONNX: ScatterND) - N-dimensional scatter
-- [ ] Implement gather_nd (ONNX: GatherND) - N-dimensional gather
+- [x] Implement scatter_nd (ONNX: ScatterND) - N-dimensional scatter
+- [x] Implement gather_nd (ONNX: GatherND) - N-dimensional gather
 - [ ] Implement depth_to_space (ONNX: DepthToSpace) - pixel shuffle for super-resolution
 - [ ] Implement space_to_depth (ONNX: SpaceToDepth) - inverse pixel shuffle
 - [ ] Implement grid_sample (ONNX: GridSample) - 2D/3D spatial sampling
