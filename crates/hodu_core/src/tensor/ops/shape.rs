@@ -523,4 +523,108 @@ impl Tensor {
             Ok(result)
         }
     }
+
+    /// Rearranges data from depth (channel) dimension into spatial blocks.
+    /// Also known as PixelShuffle in PyTorch.
+    ///
+    /// Input shape: [N, C*block_size*block_size, H, W]
+    /// Output shape: [N, C, H*block_size, W*block_size]
+    ///
+    /// # Arguments
+    /// * `block_size` - The size of spatial blocks (upscale factor)
+    /// * `mode` - Rearrangement mode: "DCR" (default) or "CRD"
+    ///   - DCR: depth-column-row order (ONNX default, PyTorch PixelShuffle)
+    ///   - CRD: column-row-depth order
+    pub fn depth_to_space(&self, block_size: usize, mode: &str) -> HoduResult<Self> {
+        let shape = self.shape();
+        let dims = shape.dims();
+
+        if dims.len() != 4 {
+            return Err(HoduError::InvalidLayout {
+                reason: format!("depth_to_space requires 4D input [N,C,H,W], got {}D", dims.len()),
+            });
+        }
+
+        let (n, c, h, w) = (dims[0], dims[1], dims[2], dims[3]);
+        let r = block_size;
+
+        if c % (r * r) != 0 {
+            return Err(HoduError::InvalidLayout {
+                reason: format!("channels {} must be divisible by block_size^2 ({})", c, r * r),
+            });
+        }
+
+        let c_out = c / (r * r);
+
+        match mode {
+            "DCR" => {
+                // [N, C*r*r, H, W] -> [N, C, r, r, H, W] -> [N, C, H, r, W, r] -> [N, C, H*r, W*r]
+                let reshaped = self.reshape([n, c_out, r, r, h, w])?;
+                let permuted = reshaped.permute(&[0, 1, 4, 2, 5, 3])?;
+                permuted.contiguous()?.reshape([n, c_out, h * r, w * r])
+            },
+            "CRD" => {
+                // [N, r, r, C, H, W] -> [N, C, H, r, W, r] -> [N, C, H*r, W*r]
+                let reshaped = self.reshape([n, r, r, c_out, h, w])?;
+                let permuted = reshaped.permute(&[0, 3, 4, 1, 5, 2])?;
+                permuted.contiguous()?.reshape([n, c_out, h * r, w * r])
+            },
+            _ => Err(HoduError::InvalidLayout {
+                reason: format!("depth_to_space mode must be 'DCR' or 'CRD', got '{}'", mode),
+            }),
+        }
+    }
+
+    /// Rearranges data from spatial blocks into the depth (channel) dimension.
+    /// Also known as PixelUnshuffle in PyTorch.
+    ///
+    /// Input shape: [N, C, H*block_size, W*block_size]
+    /// Output shape: [N, C*block_size*block_size, H, W]
+    ///
+    /// # Arguments
+    /// * `block_size` - The size of spatial blocks (downscale factor)
+    /// * `mode` - Rearrangement mode: "DCR" (default) or "CRD"
+    ///   - DCR: depth-column-row order (ONNX default)
+    ///   - CRD: column-row-depth order
+    pub fn space_to_depth(&self, block_size: usize, mode: &str) -> HoduResult<Self> {
+        let shape = self.shape();
+        let dims = shape.dims();
+
+        if dims.len() != 4 {
+            return Err(HoduError::InvalidLayout {
+                reason: format!("space_to_depth requires 4D input [N,C,H,W], got {}D", dims.len()),
+            });
+        }
+
+        let (n, c, h, w) = (dims[0], dims[1], dims[2], dims[3]);
+        let r = block_size;
+
+        if h % r != 0 || w % r != 0 {
+            return Err(HoduError::InvalidLayout {
+                reason: format!("height {} and width {} must be divisible by block_size {}", h, w, r),
+            });
+        }
+
+        let h_out = h / r;
+        let w_out = w / r;
+        let c_out = c * r * r;
+
+        match mode {
+            "DCR" => {
+                // [N, C, H*r, W*r] -> [N, C, H, r, W, r] -> [N, C, r, r, H, W] -> [N, C*r*r, H, W]
+                let reshaped = self.reshape([n, c, h_out, r, w_out, r])?;
+                let permuted = reshaped.permute(&[0, 1, 3, 5, 2, 4])?;
+                permuted.contiguous()?.reshape([n, c_out, h_out, w_out])
+            },
+            "CRD" => {
+                // [N, C, H, r, W, r] -> [N, r, r, C, H, W] -> [N, C*r*r, H, W]
+                let reshaped = self.reshape([n, c, h_out, r, w_out, r])?;
+                let permuted = reshaped.permute(&[0, 3, 5, 1, 2, 4])?;
+                permuted.contiguous()?.reshape([n, c_out, h_out, w_out])
+            },
+            _ => Err(HoduError::InvalidLayout {
+                reason: format!("space_to_depth mode must be 'DCR' or 'CRD', got '{}'", mode),
+            }),
+        }
+    }
 }
