@@ -1,6 +1,7 @@
 use crate::{
     error::HoduResult,
     ops::{DetParams, InvParams, LinalgOp, Op, OpParams, TraceParams},
+    scalar::Scalar,
     tensor::{create_builder_tensor, from_storage_with_context, gradient, Tensor},
     types::{Layout, Shape},
     utils::valid::{validate_dtype_for_device, validate_dtype_for_op, validate_requires_grad_for_op},
@@ -286,5 +287,111 @@ impl Tensor {
         } else {
             inv_a.matmul(b)
         }
+    }
+
+    /// Returns the lower triangular part of the matrix, zeroing out elements above the k-th diagonal.
+    ///
+    /// # Input
+    /// - Matrix `[..., N, M]` (supports batched input)
+    /// - `diagonal`: The diagonal above which to zero elements.
+    ///   - `k = 0` (default): main diagonal
+    ///   - `k > 0`: above main diagonal
+    ///   - `k < 0`: below main diagonal
+    ///
+    /// # Output
+    /// - Lower triangular matrix `[..., N, M]` (same shape as input)
+    ///
+    /// # Example
+    /// ```ignore
+    /// let x = Tensor::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0], &[3, 3])?;
+    /// let lower = x.tril(0)?;
+    /// // [[1, 0, 0],
+    /// //  [4, 5, 0],
+    /// //  [7, 8, 9]]
+    /// ```
+    pub fn tril<D: Into<Scalar>>(&self, diagonal: D) -> HoduResult<Self> {
+        let diagonal = diagonal.into().to_i32();
+        let shape = self.shape();
+        let ndim = shape.ndim();
+
+        if ndim < 2 {
+            return Err(crate::error::HoduError::InvalidArgument(
+                "tril requires at least 2D tensor".to_string(),
+            ));
+        }
+
+        let n = shape.dims()[ndim - 2];
+        let m = shape.dims()[ndim - 1];
+
+        // Create row indices [0, 1, 2, ...] with shape [N, 1]
+        let row_indices = Self::arange(0i32, n as i32, 1i32)?
+            .reshape([n, 1])?
+            .to_device(self.device())?;
+
+        // Create col indices [0, 1, 2, ...] with shape [1, M]
+        let col_indices = Self::arange(0i32, m as i32, 1i32)?
+            .reshape([1, m])?
+            .to_device(self.device())?;
+
+        // tril mask: row >= col - diagonal → row + diagonal >= col
+        let row_plus_diag = row_indices.add_scalar(diagonal)?;
+        let mask = row_plus_diag.ge(&col_indices)?;
+
+        // Convert mask to input dtype and multiply
+        let mask_typed = mask.to_dtype(self.dtype())?;
+        self.mul(&mask_typed)
+    }
+
+    /// Returns the upper triangular part of the matrix, zeroing out elements below the k-th diagonal.
+    ///
+    /// # Input
+    /// - Matrix `[..., N, M]` (supports batched input)
+    /// - `diagonal`: The diagonal below which to zero elements.
+    ///   - `k = 0` (default): main diagonal
+    ///   - `k > 0`: above main diagonal
+    ///   - `k < 0`: below main diagonal
+    ///
+    /// # Output
+    /// - Upper triangular matrix `[..., N, M]` (same shape as input)
+    ///
+    /// # Example
+    /// ```ignore
+    /// let x = Tensor::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0], &[3, 3])?;
+    /// let upper = x.triu(0)?;
+    /// // [[1, 2, 3],
+    /// //  [0, 5, 6],
+    /// //  [0, 0, 9]]
+    /// ```
+    pub fn triu<D: Into<Scalar>>(&self, diagonal: D) -> HoduResult<Self> {
+        let diagonal = diagonal.into().to_i32();
+        let shape = self.shape();
+        let ndim = shape.ndim();
+
+        if ndim < 2 {
+            return Err(crate::error::HoduError::InvalidArgument(
+                "triu requires at least 2D tensor".to_string(),
+            ));
+        }
+
+        let n = shape.dims()[ndim - 2];
+        let m = shape.dims()[ndim - 1];
+
+        // Create row indices [0, 1, 2, ...] with shape [N, 1]
+        let row_indices = Self::arange(0i32, n as i32, 1i32)?
+            .reshape([n, 1])?
+            .to_device(self.device())?;
+
+        // Create col indices [0, 1, 2, ...] with shape [1, M]
+        let col_indices = Self::arange(0i32, m as i32, 1i32)?
+            .reshape([1, m])?
+            .to_device(self.device())?;
+
+        // triu mask: col >= row + diagonal
+        let row_plus_diag = row_indices.add_scalar(diagonal)?;
+        let mask = col_indices.ge(&row_plus_diag)?;
+
+        // Convert mask to input dtype and multiply
+        let mask_typed = mask.to_dtype(self.dtype())?;
+        self.mul(&mask_typed)
     }
 }

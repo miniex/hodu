@@ -912,7 +912,7 @@ impl Tensor {
         };
 
         // Convert axis to Scalar for params
-        let axis_scalar: Option<Scalar> = axis_opt.map(|ax| Scalar::from(ax));
+        let axis_scalar: Option<Scalar> = axis_opt.map(Scalar::from);
 
         if crate::snapshot::capture::is_active() {
             // In capture mode, use symbolic shape for data-dependent output

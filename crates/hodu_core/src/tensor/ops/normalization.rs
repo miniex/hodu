@@ -47,7 +47,7 @@ impl Tensor {
                 ndim
             )));
         }
-        if size == 0 || size % 2 == 0 {
+        if size == 0 || size.is_multiple_of(2) {
             return Err(crate::error::HoduError::InvalidArgument(format!(
                 "LRN size must be odd and > 0, got {}",
                 size
@@ -65,14 +65,14 @@ impl Tensor {
         // Reshape to [N, C, -1] for easier processing
         let batch_size = shape_dims[0];
         let spatial_size: usize = shape_dims[2..].iter().product();
-        let x_squared_3d = x_squared.reshape(&[batch_size, channels, spatial_size])?;
+        let x_squared_3d = x_squared.reshape([batch_size, channels, spatial_size])?;
 
         // Transpose to [N, spatial, C] for conv1d along channels
         let x_transposed = x_squared_3d.permute(&[0, 2, 1])?; // [N, spatial, C]
-        let x_for_conv = x_transposed.reshape(&[batch_size * spatial_size, 1, channels])?; // [N*spatial, 1, C]
+        let x_for_conv = x_transposed.reshape([batch_size * spatial_size, 1, channels])?; // [N*spatial, 1, C]
 
         // Create a box filter kernel [1, 1, size] filled with 1.0
-        let kernel = Tensor::ones(&[1, 1, size], dtype)?.to_device(self.device())?;
+        let kernel = Tensor::ones([1, 1, size], dtype)?.to_device(self.device())?;
 
         // Pad channels so output has same size
         let pad = size / 2;
@@ -82,7 +82,7 @@ impl Tensor {
         let local_sum = x_for_conv.conv1d(&kernel, 1, pad, 1)?; // [N*spatial, 1, C]
 
         // Reshape back to original spatial dimensions
-        let local_sum_3d = local_sum.reshape(&[batch_size, spatial_size, channels])?; // [N, spatial, C]
+        let local_sum_3d = local_sum.reshape([batch_size, spatial_size, channels])?; // [N, spatial, C]
         let local_sum_transposed = local_sum_3d.permute(&[0, 2, 1])?; // [N, C, spatial]
         let local_sum_reshaped = local_sum_transposed.reshape(shape_dims)?; // Original shape
 
