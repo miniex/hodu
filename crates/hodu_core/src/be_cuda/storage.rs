@@ -551,6 +551,10 @@ impl BackendStorageT for CudaStorage {
         ops_scan::call_ops_cumsum(self, layout, dim)
     }
 
+    fn call_ops_cumprod(&self, layout: &Layout, dim: usize) -> HoduResult<Self> {
+        ops_scan::call_ops_cumprod(self, layout, dim)
+    }
+
     fn call_ops_einsum(
         &self,
         inputs: &[&Self],

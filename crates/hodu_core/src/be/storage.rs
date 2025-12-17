@@ -146,6 +146,8 @@ pub trait BackendStorageT: Sized {
 
     fn call_ops_cumsum(&self, _: &Layout, _: usize) -> HoduResult<Self>;
 
+    fn call_ops_cumprod(&self, _: &Layout, _: usize) -> HoduResult<Self>;
+
     fn call_topk(
         &self,
         _: &Layout,
@@ -1247,6 +1249,16 @@ impl BackendStorage {
             Self::CUDA(storage) => Ok(Self::CUDA(storage.call_ops_cumsum(layout, dim)?)),
             #[cfg(feature = "metal")]
             Self::Metal(storage) => Ok(Self::Metal(storage.call_ops_cumsum(layout, dim)?)),
+        }
+    }
+
+    pub(crate) fn call_ops_cumprod(&self, layout: &Layout, dim: usize) -> HoduResult<Self> {
+        match self {
+            Self::CPU(storage) => Ok(Self::CPU(storage.call_ops_cumprod(layout, dim)?)),
+            #[cfg(feature = "cuda")]
+            Self::CUDA(storage) => Ok(Self::CUDA(storage.call_ops_cumprod(layout, dim)?)),
+            #[cfg(feature = "metal")]
+            Self::Metal(storage) => Ok(Self::Metal(storage.call_ops_cumprod(layout, dim)?)),
         }
     }
 

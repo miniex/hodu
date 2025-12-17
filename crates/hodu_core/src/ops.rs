@@ -659,12 +659,14 @@ impl fmt::Debug for PaddingOp {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum ScanOp {
     CumSum,
+    CumProd,
 }
 
 impl fmt::Display for ScanOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::CumSum => write!(f, "cumsum"),
+            Self::CumProd => write!(f, "cumprod"),
         }
     }
 }

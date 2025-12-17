@@ -115,7 +115,7 @@
 **Tensor Manipulation Ops:** (🟡 Important)
 - [x] Implement repeat/repeat_interleave - repeat tensor elements
 - [x] Implement roll - circular shift along axes (PyTorch)
-- [ ] Implement cumprod - cumulative product (like cumsum)
+- [x] Implement cumprod - cumulative product (like cumsum)
 
 **Detection Ops:** (🟢 Nice-to-have)
 - [ ] Implement roi_align/roi_pool - Region of Interest pooling (Object Detection)
