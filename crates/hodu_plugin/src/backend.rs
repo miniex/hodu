@@ -96,8 +96,11 @@ impl BuildTarget {
     /// Create a new build target with validation
     ///
     /// Returns an error if:
-    /// - Triple is empty or doesn't contain a hyphen
+    /// - Triple is empty or has invalid format
     /// - Device is empty
+    ///
+    /// Valid triple formats: `<arch>-<vendor>-<os>` or `<arch>-<vendor>-<os>-<env>`
+    /// Examples: `x86_64-unknown-linux-gnu`, `aarch64-apple-darwin`
     pub fn new_checked(triple: impl Into<String>, device: impl Into<String>) -> Result<Self, BuildTargetError> {
         let triple = triple.into();
         let device = device.into();
@@ -105,9 +108,22 @@ impl BuildTarget {
         if triple.is_empty() {
             return Err(BuildTargetError::EmptyTriple);
         }
-        if !triple.contains('-') && triple != "unknown" {
-            return Err(BuildTargetError::InvalidTripleFormat);
+
+        // Allow "unknown" as special case, otherwise require valid triple format
+        if triple != "unknown" {
+            let parts: Vec<&str> = triple.split('-').collect();
+            // Must have at least 3 parts: arch-vendor-os (optionally -env)
+            if parts.len() < 3 {
+                return Err(BuildTargetError::InvalidTripleFormat);
+            }
+            // Each part must be non-empty and alphanumeric (with underscores allowed)
+            for part in &parts {
+                if part.is_empty() || !part.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                    return Err(BuildTargetError::InvalidTripleFormat);
+                }
+            }
         }
+
         if device.is_empty() {
             return Err(BuildTargetError::EmptyDevice);
         }

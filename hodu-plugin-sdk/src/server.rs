@@ -420,7 +420,8 @@ fn base64_encode(data: &[u8]) -> String {
         }
     }
 
-    String::from_utf8(result).unwrap_or_default()
+    // SAFETY: base64 encoding only produces ASCII characters, so this is always valid UTF-8
+    String::from_utf8(result).expect("base64 encoding produces only ASCII characters")
 }
 
 // ============================================================================
@@ -504,6 +505,8 @@ pub struct PluginServer {
     debug_options: DebugOptions,
     /// Build-time validation errors (reported on run())
     build_errors: Vec<String>,
+    /// Flag to indicate graceful shutdown was requested
+    shutdown_requested: bool,
 }
 
 impl PluginServer {
@@ -527,6 +530,7 @@ impl PluginServer {
             post_request_hook: None,
             debug_options: DebugOptions::default(),
             build_errors: Vec::new(),
+            shutdown_requested: false,
         }
     }
 
@@ -953,6 +957,11 @@ impl PluginServer {
                     stdout.flush()?;
                 }
             }
+
+            // Check for graceful shutdown after processing the request
+            if self.shutdown_requested {
+                break;
+            }
         }
 
         Ok(())
@@ -1088,7 +1097,9 @@ impl PluginServer {
                 if let Some(callback) = self.shutdown_callback.take() {
                     callback();
                 }
-                std::process::exit(0);
+                // Signal graceful shutdown (run loop will exit after sending response)
+                self.shutdown_requested = true;
+                Ok(serde_json::json!(null))
             },
             methods::CANCEL => {
                 self.handle_cancel(params).await;

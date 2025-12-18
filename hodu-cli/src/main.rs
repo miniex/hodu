@@ -42,7 +42,7 @@ pub enum Commands {
 
 fn main() {
     // First-run setup: show plugin installation wizard if no plugins installed
-    // Must run before Cli::parse() since parse exits on missing subcommand
+    // Runs before command execution but after parsing, so user's command is preserved
     if commands::setup::is_first_run() && !commands::setup::was_setup_shown() {
         if let Err(e) = commands::setup::run_setup() {
             output::warning(&format!("Setup skipped: {e}"));
@@ -50,7 +50,7 @@ fn main() {
         if let Err(e) = commands::setup::mark_setup_shown() {
             output::warning(&format!("Failed to mark setup shown: {e}"));
         }
-        return;
+        // Continue to execute user's command after setup (don't return early)
     }
 
     let cli = Cli::parse();

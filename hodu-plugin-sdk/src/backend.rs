@@ -86,7 +86,32 @@ impl BuildCapability {
 // ============================================================================
 
 /// Check if a tool is available on the system
+///
+/// Tool names are validated to prevent command injection:
+/// - Must not be empty
+/// - Must not contain path separators (`/`, `\`)
+/// - Must not contain shell metacharacters
+/// - Must not contain null bytes or control characters
+///
+/// Returns `false` for invalid tool names without executing anything.
 pub fn is_tool_available(tool: &str) -> bool {
+    // Validate tool name to prevent command injection
+    if tool.is_empty() {
+        return false;
+    }
+    // Reject path separators (prevents executing arbitrary paths)
+    if tool.contains('/') || tool.contains('\\') {
+        return false;
+    }
+    // Reject shell metacharacters and control characters
+    const FORBIDDEN_CHARS: &[char] = &[
+        '\0', '\n', '\r', '\t', ' ', '&', '|', ';', '$', '`', '(', ')', '{', '}', '[', ']', '<', '>', '\'', '"', '!',
+        '*', '?', '#', '~', '^',
+    ];
+    if tool.chars().any(|c| c.is_control() || FORBIDDEN_CHARS.contains(&c)) {
+        return false;
+    }
+
     Command::new(tool)
         .arg("--version")
         .output()
@@ -94,23 +119,62 @@ pub fn is_tool_available(tool: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// Check if host matches a pattern (supports glob * at start/end)
+/// Check if host matches a pattern (supports glob * wildcards)
+///
+/// Supports wildcards at any position:
+/// - `*` matches everything
+/// - `*-apple-darwin` matches suffix
+/// - `x86_64-*` matches prefix
+/// - `aarch64-*-darwin` matches prefix and suffix with any middle
 ///
 /// # Examples
 /// - `host_matches_pattern("aarch64-apple-darwin", "*-apple-darwin")` -> true
 /// - `host_matches_pattern("x86_64-linux-gnu", "x86_64-*")` -> true
 /// - `host_matches_pattern("aarch64-linux-gnu", "*")` -> true
+/// - `host_matches_pattern("aarch64-apple-darwin", "aarch64-*-darwin")` -> true
+/// - `host_matches_pattern("x86_64-unknown-linux-gnu", "*-linux-*")` -> true
 pub fn host_matches_pattern(host: &str, pattern: &str) -> bool {
     if pattern == "*" {
         return true;
     }
-    if let Some(suffix) = pattern.strip_prefix('*') {
-        return host.ends_with(suffix);
+
+    // Split pattern by '*' and match each part sequentially
+    let parts: Vec<&str> = pattern.split('*').collect();
+
+    // Single part means no wildcard - exact match
+    if parts.len() == 1 {
+        return host == pattern;
     }
-    if let Some(prefix) = pattern.strip_suffix('*') {
-        return host.starts_with(prefix);
+
+    let mut remaining = host;
+
+    for (i, part) in parts.iter().enumerate() {
+        if part.is_empty() {
+            continue;
+        }
+
+        if i == 0 {
+            // First part must be a prefix
+            if !remaining.starts_with(part) {
+                return false;
+            }
+            remaining = &remaining[part.len()..];
+        } else if i == parts.len() - 1 {
+            // Last part must be a suffix
+            if !remaining.ends_with(part) {
+                return false;
+            }
+        } else {
+            // Middle parts can appear anywhere in remaining
+            if let Some(pos) = remaining.find(part) {
+                remaining = &remaining[pos + part.len()..];
+            } else {
+                return false;
+            }
+        }
     }
-    host == pattern
+
+    true
 }
 
 /// Plugin manifest (manifest.json)

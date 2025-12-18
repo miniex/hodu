@@ -7,6 +7,31 @@ use crate::utils::{core_dtype_to_plugin, path_to_str, plugin_dtype_to_core};
 use clap::Args;
 use std::path::PathBuf;
 
+/// RAII guard for temporary files - automatically cleans up on drop
+struct TempFileGuard {
+    path: PathBuf,
+}
+
+impl TempFileGuard {
+    fn new(path: PathBuf) -> Self {
+        Self { path }
+    }
+
+    fn path(&self) -> &PathBuf {
+        &self.path
+    }
+}
+
+impl Drop for TempFileGuard {
+    fn drop(&mut self) {
+        if self.path.exists() {
+            if let Err(e) = std::fs::remove_file(&self.path) {
+                output::warning(&format!("Failed to remove temp file: {}", e));
+            }
+        }
+    }
+}
+
 #[derive(Args)]
 pub struct ConvertArgs {
     /// Input file
@@ -193,25 +218,20 @@ fn convert_tensor(
             }
 
             // Save to temp hdt first (use PID + timestamp for uniqueness)
-            let temp_path = std::env::temp_dir().join(format!(
+            // TempFileGuard ensures cleanup even on error
+            let temp_guard = TempFileGuard::new(std::env::temp_dir().join(format!(
                 "hodu_convert_{}_{}.hdt",
                 std::process::id(),
                 std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .map(|d| d.as_nanos())
                     .unwrap_or(0)
-            ));
-            save_tensor_data(&tensor_data, &temp_path)?;
+            )));
+            save_tensor_data(&tensor_data, temp_guard.path())?;
 
             let client = manager.get_plugin(&plugin.name)?;
-            let result = client.save_tensor(path_to_str(&temp_path)?, path_to_str(&args.output)?);
-
-            // Cleanup temp file (warn on failure)
-            if let Err(e) = std::fs::remove_file(&temp_path) {
-                output::warning(&format!("Failed to remove temp file: {}", e));
-            }
-
-            result?;
+            client.save_tensor(path_to_str(temp_guard.path())?, path_to_str(&args.output)?)?;
+            // temp_guard automatically cleans up on drop
         },
     }
 

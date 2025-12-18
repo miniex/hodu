@@ -652,11 +652,11 @@ fn parse_manifest(manifest_path: &Path, package_name: &str) -> Result<ManifestIn
             PluginCapabilities::tensor_format(load_tensor, save_tensor, extensions),
         )
     } else {
-        // Default to ModelFormat
-        (
-            PluginType::ModelFormat,
-            PluginCapabilities::model_format(true, false, extensions),
-        )
+        // No recognized capabilities - reject invalid manifest instead of silent fallback
+        return Err("Invalid manifest.json: no recognized capabilities found. \
+             Expected one or more of: backend.run, backend.build, format.load_model, \
+             format.save_model, format.load_tensor, format.save_tensor"
+            .into());
     };
 
     Ok((name, version, plugin_version, plugin_type, capabilities))
@@ -677,28 +677,19 @@ pub fn get_plugins_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
     Ok(plugins_dir)
 }
 
-/// Parse package name from Cargo.toml content
+/// Parse package name from Cargo.toml content using proper TOML parsing
 pub fn parse_package_name(content: &str) -> Option<String> {
-    let mut in_package = false;
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed == "[package]" {
-            in_package = true;
-            continue;
-        }
-        if trimmed.starts_with('[') && trimmed != "[package]" {
-            in_package = false;
-            continue;
-        }
-        if in_package && trimmed.starts_with("name") {
-            if let Some(eq_pos) = trimmed.find('=') {
-                let value = trimmed[eq_pos + 1..].trim();
-                let value = value.trim_matches('"').trim_matches('\'');
-                return Some(value.to_string());
-            }
-        }
+    #[derive(serde::Deserialize)]
+    struct CargoToml {
+        package: Option<Package>,
     }
-    None
+    #[derive(serde::Deserialize)]
+    struct Package {
+        name: Option<String>,
+    }
+
+    let cargo: CargoToml = toml::from_str(content).ok()?;
+    cargo.package?.name
 }
 
 /// Fetch official registry

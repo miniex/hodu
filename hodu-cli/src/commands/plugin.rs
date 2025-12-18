@@ -496,26 +496,28 @@ fn do_install(args: InstallArgs) -> Result<(), Box<dyn std::error::Error>> {
 fn remove_plugin(args: RemoveArgs) -> Result<(), Box<dyn std::error::Error>> {
     let (mut registry, registry_path) = load_registry_mut()?;
 
-    // Find the plugin (try various name formats)
-    let plugin = if let Some(p) = registry.find(&args.name) {
-        p
+    // Resolve plugin name (try various name formats without recursion)
+    let resolved_name = if registry.find(&args.name).is_some() {
+        args.name.clone()
     } else {
         let backend_name = backend_plugin_name(&args.name);
         let format_name = format_plugin_name(&args.name);
 
         if registry.find(&backend_name).is_some() {
-            return remove_plugin(RemoveArgs { name: backend_name });
+            backend_name
         } else if registry.find(&format_name).is_some() {
-            return remove_plugin(RemoveArgs { name: format_name });
+            format_name
+        } else {
+            return Err(format!(
+                "Plugin '{}' not found.\n\nInstalled plugins:\n{}",
+                args.name,
+                list_installed_plugins(&registry)
+            )
+            .into());
         }
-
-        return Err(format!(
-            "Plugin '{}' not found.\n\nInstalled plugins:\n{}",
-            args.name,
-            list_installed_plugins(&registry)
-        )
-        .into());
     };
+
+    let plugin = registry.find(&resolved_name).unwrap(); // Safe: we just verified it exists
 
     let name = plugin.name.clone();
     let version = plugin.version.clone();

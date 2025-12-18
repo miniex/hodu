@@ -299,36 +299,17 @@ pub struct InitializeResult {
 
 impl InitializeResult {
     /// Check if collection sizes are within limits
+    ///
+    /// Returns `true` if all collections are within their size limits.
+    /// For detailed error information, use `validate_limits()` instead.
     pub fn is_within_limits(&self) -> bool {
-        if self.capabilities.len() > MAX_CAPABILITIES {
-            return false;
-        }
-        if let Some(ref exts) = self.model_extensions {
-            if exts.len() > MAX_EXTENSIONS {
-                return false;
-            }
-        }
-        if let Some(ref exts) = self.tensor_extensions {
-            if exts.len() > MAX_EXTENSIONS {
-                return false;
-            }
-        }
-        if let Some(ref devices) = self.devices {
-            if devices.len() > MAX_DEVICES {
-                return false;
-            }
-        }
-        if let Some(ref meta) = self.metadata {
-            if let Some(ref targets) = meta.supported_targets {
-                if targets.len() > MAX_SUPPORTED_TARGETS {
-                    return false;
-                }
-            }
-        }
-        true
+        self.validate_limits().is_ok()
     }
 
     /// Validate collection sizes
+    ///
+    /// Returns `Ok(())` if all collections are within limits, or
+    /// `Err(ValidationError)` with details about which limit was exceeded.
     pub fn validate_limits(&self) -> Result<(), ValidationError> {
         if self.capabilities.len() > MAX_CAPABILITIES {
             return Err(ValidationError {
@@ -733,7 +714,8 @@ impl Request {
 
     /// Create a new JSON-RPC request with validation
     ///
-    /// Returns an error if the method name is empty or contains invalid characters.
+    /// Returns an error if the method name is empty, contains invalid characters,
+    /// or doesn't contain at least one alphanumeric character.
     pub fn new_checked(
         method: impl Into<String>,
         params: Option<serde_json::Value>,
@@ -750,6 +732,11 @@ impl Request {
             .chars()
             .all(|c| c.is_alphanumeric() || c == '.' || c == '_' || c == '/' || c == '$');
         if !valid_chars {
+            return Err(RequestValidationError::InvalidMethodChars);
+        }
+
+        // Must contain at least one alphanumeric character (not just punctuation)
+        if !method.chars().any(|c| c.is_alphanumeric()) {
             return Err(RequestValidationError::InvalidMethodChars);
         }
 

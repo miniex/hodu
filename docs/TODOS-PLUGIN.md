@@ -69,3 +69,15 @@
 - [x] Add missing error factories - `rpc.rs:658-682` added `device_not_available()`, `model_error()`, `tensor_error()`, `plugin_error()`, `invalid_format()`
 - [x] Validate LogParams level - `rpc.rs:382` added `is_valid_level()`, `normalized_level()`, and `VALID_LOG_LEVELS`
 - [x] Validate TensorInput/Output names - `rpc.rs:314,348` added `is_valid_name()` methods
+
+---
+
+## Newly Discovered Issues (4th Analysis)
+
+**Validation:** (🟢 Nice-to-have)
+- [x] Strengthen BuildTarget triple validation - `backend.rs:113-124` now requires 3+ hyphen-separated parts (arch-vendor-os)
+- [x] Strengthen method name validation - `rpc.rs:751-757` now requires at least one alphanumeric character
+
+**Code Quality:** (🟢 Nice-to-have)
+- [x] Refactor duplicate validation logic - `rpc.rs:300-382` `is_within_limits()` now calls `validate_limits().is_ok()`
+- [x] Consider Result for `numel()` overflow - `tensor.rs:252` now returns `Option<usize>`, `None` on overflow; added `numel_unchecked()` for backwards compatibility

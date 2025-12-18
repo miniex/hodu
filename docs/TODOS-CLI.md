@@ -83,3 +83,21 @@
 **Error Handling:** (🟢 Nice-to-have)
 - [x] Improve empty filename fallback - `run.rs:171` now falls back to full path display
 - [x] Warn on insecure git protocols - `install.rs:210` warns for `http://` and `git://` protocols
+
+---
+
+## Newly Discovered Issues (4th Analysis)
+
+**UX:** (🟡 Important)
+- [x] Fix setup wizard early return - `main.rs:44-54` now continues to execute user's command after setup
+
+**Code Quality:** (🟡 Important)
+- [x] Use `toml` crate for Cargo.toml parsing - `install.rs:680-693` now uses proper TOML parsing with serde
+- [x] Reject invalid manifests explicitly - `install.rs:654-662` now returns error if no recognized capabilities found
+
+**Security:** (🟢 Nice-to-have)
+- [x] Strengthen path expansion for non-existent files - `run.rs:412-434` now canonicalizes parent directory for non-existent paths
+
+**Code Quality:** (🟢 Nice-to-have)
+- [x] Use RAII guard in convert command - `convert.rs:11-33` added `TempFileGuard` with automatic cleanup on drop
+- [x] Refactor remove_plugin recursion - `plugin.rs:493-523` inlined name resolution logic instead of recursive call

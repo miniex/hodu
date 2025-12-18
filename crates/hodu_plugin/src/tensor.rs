@@ -247,8 +247,17 @@ impl TensorData {
 
     /// Number of elements in the tensor
     ///
-    /// Note: This may overflow for very large shapes. Use `checked_numel()` for validation.
-    pub fn numel(&self) -> usize {
+    /// Returns `None` if the shape product overflows.
+    /// For unchecked access, use `numel_unchecked()`.
+    pub fn numel(&self) -> Option<usize> {
+        Self::checked_numel(&self.shape)
+    }
+
+    /// Number of elements in the tensor (unchecked)
+    ///
+    /// Returns `usize::MAX` if the shape product overflows.
+    /// Prefer `numel()` for safer overflow handling.
+    pub fn numel_unchecked(&self) -> usize {
         Self::checked_numel(&self.shape).unwrap_or(usize::MAX)
     }
 
@@ -357,10 +366,10 @@ mod tests {
     #[test]
     fn test_tensor_data_numel() {
         let tensor = TensorData::new(vec![], vec![2, 3, 4], PluginDType::F32);
-        assert_eq!(tensor.numel(), 24);
+        assert_eq!(tensor.numel(), Some(24));
 
         let scalar = TensorData::new(vec![], vec![], PluginDType::F32);
-        assert_eq!(scalar.numel(), 1);
+        assert_eq!(scalar.numel(), Some(1));
     }
 
     #[test]
@@ -415,9 +424,11 @@ mod tests {
         let result = TensorData::new_checked(vec![], vec![usize::MAX, 2], PluginDType::F32);
         assert_eq!(result.unwrap_err(), TensorDataError::ShapeOverflow);
 
-        // numel should return MAX on overflow instead of panicking
+        // numel should return None on overflow
         let tensor = TensorData::new(vec![], vec![usize::MAX, 2], PluginDType::F32);
-        assert_eq!(tensor.numel(), usize::MAX);
+        assert_eq!(tensor.numel(), None);
+        // numel_unchecked should return MAX on overflow instead of panicking
+        assert_eq!(tensor.numel_unchecked(), usize::MAX);
         assert!(!tensor.is_valid());
     }
 }

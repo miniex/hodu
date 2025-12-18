@@ -410,28 +410,38 @@ fn expand_path(path: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
     };
 
     // Canonicalize to resolve .. and symlinks, preventing path traversal
-    // If the file doesn't exist yet, check using path components
     if expanded.exists() {
-        Ok(expanded.canonicalize()?)
-    } else {
-        // For non-existent paths, check using path components (stronger than string check)
-        for component in expanded.components() {
-            match component {
-                Component::ParentDir => {
-                    return Err("Path traversal (.. components) not allowed".into());
-                },
-                Component::Normal(s) => {
-                    // Check for null bytes and suspicious patterns
-                    let s_str = s.to_string_lossy();
-                    if s_str.contains('\0') {
-                        return Err("Path contains null byte".into());
-                    }
-                },
-                _ => {},
+        return Ok(expanded.canonicalize()?);
+    }
+
+    // For non-existent paths, strictly validate components
+    for component in expanded.components() {
+        match component {
+            Component::ParentDir => {
+                return Err("Path traversal (.. components) not allowed".into());
+            },
+            Component::Normal(s) => {
+                let s_str = s.to_string_lossy();
+                if s_str.contains('\0') {
+                    return Err("Path contains null byte".into());
+                }
+            },
+            _ => {},
+        }
+    }
+
+    // For non-existent files, canonicalize the existing parent directory
+    // This resolves symlinks in the parent path, preventing symlink-based traversal
+    if let Some(parent) = expanded.parent() {
+        if parent.exists() {
+            let canonical_parent = parent.canonicalize()?;
+            if let Some(file_name) = expanded.file_name() {
+                return Ok(canonical_parent.join(file_name));
             }
         }
-        Ok(expanded)
     }
+
+    Ok(expanded)
 }
 
 fn parse_device(device_str: &str) -> Result<Device, Box<dyn std::error::Error>> {

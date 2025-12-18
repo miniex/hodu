@@ -92,3 +92,26 @@
 - [x] Avoid double-parsing batch requests - `server.rs:989` now uses `handle_request_value()` with `from_value()`
 - [x] Reduce RequestId cloning - `server.rs:1046` uses `Arc<RequestId>` and `Arc::unwrap_or_clone()` for final response
 - [x] Warn on duplicate handler registration - `server.rs:864` now logs warning when overwriting
+
+---
+
+## Newly Discovered Issues (4th Analysis)
+
+**Shutdown Safety:** (🔴 Critical)
+- [x] Replace `std::process::exit(0)` with graceful shutdown - `server.rs:1089-1097` now sets `shutdown_requested` flag and returns response, run loop exits gracefully
+
+**Security:** (🔴 Critical)
+- [x] Validate tool names in `is_tool_available()` - `backend.rs:97-120` now validates tool names (no paths, no shell metacharacters)
+
+**Macro Safety:** (🔴 Critical)
+- [x] Replace panics with compiler errors in proc macros - `macros/lib.rs:148-194` now uses `syn::Error::new_spanned()` for proper compiler errors
+
+**Validation:** (🟡 Important)
+- [x] Improve glob pattern matching - `backend.rs:136-178` now supports wildcards at any position (e.g., `aarch64-*-darwin`)
+- [x] Fix fragile attribute parsing in macros - `macros/lib.rs:53-79` now uses `syn::parse2` for proper token parsing
+
+**Error Handling:** (🟡 Important)
+- [x] Handle base64 encoding errors - `server.rs:423-424` now uses `expect()` with safety comment (base64 always produces valid ASCII)
+
+**Build Script:** (🟢 Nice-to-have)
+- [x] Handle missing TARGET env var - `build.rs:4` now uses `unwrap_or_else` with "unknown" fallback
