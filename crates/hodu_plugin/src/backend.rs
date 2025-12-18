@@ -2,6 +2,8 @@
 //!
 //! Types for backend plugins that execute models on various devices.
 
+use std::fmt;
+
 /// Target device for plugin execution
 ///
 /// Using String for extensibility - plugins can define custom devices.
@@ -10,14 +12,64 @@
 pub type Device = String;
 
 /// Parse device ID from device string (e.g., "cuda::0" -> 0)
+///
+/// Returns `Some(id)` if the device string contains a valid numeric ID after `::`.
+/// Returns `None` for devices without an ID (e.g., "cpu", "metal") or invalid formats.
+///
+/// # Examples
+/// ```
+/// use hodu_plugin::parse_device_id;
+/// assert_eq!(parse_device_id("cuda::0"), Some(0));
+/// assert_eq!(parse_device_id("cpu"), None);
+/// ```
 pub fn parse_device_id(device: &str) -> Option<usize> {
-    device.split("::").nth(1).and_then(|id| id.parse().ok())
+    let parts: Vec<&str> = device.split("::").collect();
+    // Only accept exactly 2 parts (type::id)
+    if parts.len() == 2 {
+        parts[1].parse().ok()
+    } else {
+        None
+    }
 }
 
 /// Get device type from device string (e.g., "cuda::0" -> "cuda")
+///
+/// Returns the device type portion before the `::` separator, or the entire
+/// string if no separator is present.
+///
+/// # Examples
+/// ```
+/// use hodu_plugin::device_type;
+/// assert_eq!(device_type("cuda::0"), "cuda");
+/// assert_eq!(device_type("cpu"), "cpu");
+/// ```
 pub fn device_type(device: &str) -> &str {
-    device.split("::").next().unwrap_or(device)
+    // split().next() always returns Some for non-empty iterator
+    device.split("::").next().unwrap()
 }
+
+/// Error type for BuildTarget validation
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BuildTargetError {
+    /// Triple string is empty
+    EmptyTriple,
+    /// Device string is empty
+    EmptyDevice,
+    /// Triple format is invalid (should contain at least one hyphen)
+    InvalidTripleFormat,
+}
+
+impl fmt::Display for BuildTargetError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::EmptyTriple => write!(f, "Target triple cannot be empty"),
+            Self::EmptyDevice => write!(f, "Device cannot be empty"),
+            Self::InvalidTripleFormat => write!(f, "Invalid triple format (expected 'arch-vendor-os' pattern)"),
+        }
+    }
+}
+
+impl std::error::Error for BuildTargetError {}
 
 /// Build target specification for AOT compilation
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -29,12 +81,34 @@ pub struct BuildTarget {
 }
 
 impl BuildTarget {
-    /// Create a new build target
+    /// Create a new build target without validation
     pub fn new(triple: impl Into<String>, device: impl Into<String>) -> Self {
         Self {
             triple: triple.into(),
             device: device.into(),
         }
+    }
+
+    /// Create a new build target with validation
+    ///
+    /// Returns an error if:
+    /// - Triple is empty or doesn't contain a hyphen
+    /// - Device is empty
+    pub fn new_checked(triple: impl Into<String>, device: impl Into<String>) -> Result<Self, BuildTargetError> {
+        let triple = triple.into();
+        let device = device.into();
+
+        if triple.is_empty() {
+            return Err(BuildTargetError::EmptyTriple);
+        }
+        if !triple.contains('-') && triple != "unknown" {
+            return Err(BuildTargetError::InvalidTripleFormat);
+        }
+        if device.is_empty() {
+            return Err(BuildTargetError::EmptyDevice);
+        }
+
+        Ok(Self { triple, device })
     }
 
     /// Create a build target for the current host system
@@ -77,6 +151,9 @@ mod tests {
         assert_eq!(parse_device_id("cpu"), None);
         assert_eq!(parse_device_id("metal"), None);
         assert_eq!(parse_device_id("cuda::invalid"), None);
+        // Malformed inputs should return None
+        assert_eq!(parse_device_id("cuda::0::extra"), None);
+        assert_eq!(parse_device_id(""), None);
     }
 
     #[test]
@@ -109,5 +186,48 @@ mod tests {
         assert!(!triple.is_empty());
         // Should contain architecture and OS
         assert!(triple.contains('-'));
+    }
+
+    #[test]
+    fn test_build_target_new_checked_valid() {
+        let result = BuildTarget::new_checked("x86_64-unknown-linux-gnu", "cuda::0");
+        assert!(result.is_ok());
+        let target = result.unwrap();
+        assert_eq!(target.triple, "x86_64-unknown-linux-gnu");
+        assert_eq!(target.device, "cuda::0");
+    }
+
+    #[test]
+    fn test_build_target_new_checked_empty_triple() {
+        let result = BuildTarget::new_checked("", "cpu");
+        assert_eq!(result.unwrap_err(), BuildTargetError::EmptyTriple);
+    }
+
+    #[test]
+    fn test_build_target_new_checked_empty_device() {
+        let result = BuildTarget::new_checked("x86_64-unknown-linux-gnu", "");
+        assert_eq!(result.unwrap_err(), BuildTargetError::EmptyDevice);
+    }
+
+    #[test]
+    fn test_build_target_new_checked_invalid_triple() {
+        let result = BuildTarget::new_checked("invalid", "cpu");
+        assert_eq!(result.unwrap_err(), BuildTargetError::InvalidTripleFormat);
+    }
+
+    #[test]
+    fn test_build_target_new_checked_unknown_triple() {
+        // "unknown" is allowed as a special case
+        let result = BuildTarget::new_checked("unknown", "cpu");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_build_target_error_display() {
+        assert_eq!(
+            BuildTargetError::EmptyTriple.to_string(),
+            "Target triple cannot be empty"
+        );
+        assert_eq!(BuildTargetError::EmptyDevice.to_string(), "Device cannot be empty");
     }
 }

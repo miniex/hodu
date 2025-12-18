@@ -47,7 +47,9 @@ fn main() {
         if let Err(e) = commands::setup::run_setup() {
             output::warning(&format!("Setup skipped: {e}"));
         }
-        let _ = commands::setup::mark_setup_shown();
+        if let Err(e) = commands::setup::mark_setup_shown() {
+            output::warning(&format!("Failed to mark setup shown: {e}"));
+        }
         return;
     }
 

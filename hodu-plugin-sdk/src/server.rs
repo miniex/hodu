@@ -189,7 +189,9 @@ pub fn notify_progress(percent: Option<u8>, message: &str) {
         if writeln!(std::io::stdout(), "{}", json).is_err() {
             eprintln!("Warning: Failed to send progress notification");
         }
-        let _ = std::io::stdout().flush();
+        if std::io::stdout().flush().is_err() {
+            eprintln!("Warning: Failed to flush progress notification");
+        }
     }
 }
 
@@ -213,7 +215,9 @@ pub fn notify_log(level: &str, message: &str) {
         if writeln!(std::io::stdout(), "{}", json).is_err() {
             eprintln!("Warning: Failed to send log notification");
         }
-        let _ = std::io::stdout().flush();
+        if std::io::stdout().flush().is_err() {
+            eprintln!("Warning: Failed to flush log notification");
+        }
     }
 }
 
@@ -298,8 +302,12 @@ impl StreamWriter {
         }
 
         let notification = Notification::new(&self.method, Some(params));
-        let json = serde_json::to_string(&notification)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        let json = serde_json::to_string(&notification).map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Failed to serialize chunk {}: {}", self.chunk_index, e),
+            )
+        })?;
 
         writeln!(std::io::stdout(), "{}", json)?;
         std::io::stdout().flush()?;
@@ -318,8 +326,12 @@ impl StreamWriter {
         });
 
         let notification = Notification::new(&self.method, Some(params));
-        let json = serde_json::to_string(&notification)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        let json = serde_json::to_string(&notification).map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Failed to serialize JSON chunk {}: {}", self.chunk_index, e),
+            )
+        })?;
 
         writeln!(std::io::stdout(), "{}", json)?;
         std::io::stdout().flush()?;
@@ -338,8 +350,12 @@ impl StreamWriter {
         });
 
         let notification = Notification::new(&self.method, Some(params));
-        let json = serde_json::to_string(&notification)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        let json = serde_json::to_string(&notification).map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Failed to serialize finish notification: {}", e),
+            )
+        })?;
 
         writeln!(std::io::stdout(), "{}", json)?;
         std::io::stdout().flush()?;

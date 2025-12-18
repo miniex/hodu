@@ -227,18 +227,28 @@ impl TestHarness {
     }
 
     /// Get captured logs
+    ///
+    /// Returns logs even if the lock was poisoned (e.g., due to a panic in another test).
     pub fn get_logs(&self) -> Vec<LogEntry> {
-        self.logs.lock().unwrap().clone()
+        self.logs
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
     }
 
     /// Clear captured logs
+    ///
+    /// Clears logs even if the lock was poisoned.
     pub fn clear_logs(&self) {
-        self.logs.lock().unwrap().clear();
+        self.logs
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clear();
     }
 
     /// Assert that a specific log message was captured
     pub fn assert_logged(&self, level: &str, message_contains: &str) {
-        let logs = self.logs.lock().unwrap();
+        let logs = self.logs.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         let found = logs
             .iter()
             .any(|log| log.level == level && log.message.contains(message_contains));

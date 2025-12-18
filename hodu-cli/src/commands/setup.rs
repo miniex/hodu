@@ -91,7 +91,15 @@ pub fn run_setup() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn fetch_default_plugins() -> Result<HashMap<String, PresetInfo>, Box<dyn std::error::Error>> {
-    let response = ureq::get(DEFAULT_PLUGINS_URL).call()?;
+    use std::time::Duration;
+
+    // Configure timeout (30 seconds)
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_global(Some(Duration::from_secs(30)))
+        .build()
+        .into();
+
+    let response = agent.get(DEFAULT_PLUGINS_URL).call()?;
     let body = response.into_body().read_to_string()?;
     let data: DefaultPlugins = serde_json::from_str(&body)?;
     Ok(data.presets)

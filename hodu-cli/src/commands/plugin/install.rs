@@ -158,6 +158,31 @@ pub fn install_from_registry(
     install_from_git(&plugin.git, plugin.path.as_deref(), tag.as_deref(), debug, force)
 }
 
+/// Validate git URL format
+fn validate_git_url(url: &str) -> Result<(), Box<dyn std::error::Error>> {
+    // Allow common git URL patterns
+    let valid = url.starts_with("https://")
+        || url.starts_with("http://")
+        || url.starts_with("git@")
+        || url.starts_with("git://")
+        || url.starts_with("ssh://");
+
+    if !valid {
+        return Err(format!(
+            "Invalid git URL: {}. Expected https://, git@, git://, or ssh:// URL",
+            url
+        )
+        .into());
+    }
+
+    // Check for suspicious patterns
+    if url.contains("..") || url.contains('\0') {
+        return Err("Git URL contains suspicious characters".into());
+    }
+
+    Ok(())
+}
+
 pub fn install_from_git(
     url: &str,
     subdir: Option<&str>,
@@ -165,6 +190,9 @@ pub fn install_from_git(
     debug: bool,
     force: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // Validate URL before cloning
+    validate_git_url(url)?;
+
     // Create temp directory
     let temp_dir = std::env::temp_dir().join(format!("hodu_plugin_{}", std::process::id()));
     if temp_dir.exists() {
@@ -258,11 +286,18 @@ pub fn install_from_path(
     let cmd_output = cargo_cmd.output()?;
     if !cmd_output.status.success() {
         output::error("build failed");
-        return Err(format!(
-            "Failed to build plugin:\n{}",
-            String::from_utf8_lossy(&cmd_output.stderr)
-        )
-        .into());
+        let stderr = String::from_utf8_lossy(&cmd_output.stderr);
+        let stdout = String::from_utf8_lossy(&cmd_output.stdout);
+        let mut msg = String::from("Failed to build plugin:");
+        if !stderr.is_empty() {
+            msg.push_str("\n--- stderr ---\n");
+            msg.push_str(&stderr);
+        }
+        if !stdout.is_empty() {
+            msg.push_str("\n--- stdout ---\n");
+            msg.push_str(&stdout);
+        }
+        return Err(msg.into());
     }
 
     // Find the built executable

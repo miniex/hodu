@@ -36,24 +36,24 @@
 ## Newly Discovered Issues (2nd Analysis)
 
 **Security:** (🔴 Critical)
-- [ ] Add plugin signature/hash verification - `plugin/install.rs` no integrity check for downloaded plugins
-- [ ] Prevent path traversal - `run.rs:352` `expand_path()` doesn't validate `../` sequences
-- [ ] Validate git URLs - `plugin/install.rs:175` no filtering for malicious URLs
+- [ ] Add plugin signature/hash verification - `plugin/install.rs` no integrity check for downloaded plugins (requires infrastructure)
+- [x] Prevent path traversal - `run.rs:352` `expand_path()` now returns Result and validates `..` sequences
+- [x] Validate git URLs - `plugin/install.rs:175` added `validate_git_url()` function
 
 **Input Validation:** (🔴 Critical)
-- [ ] Fix JSON parsing integer overflow - `loader.rs:131` `as i32` cast truncates without range check
-- [ ] Validate u64→usize casting - `loader.rs:73` overflow possible on 32-bit systems
-- [ ] Add file size limits - `loader.rs:8` large files can exhaust memory
+- [x] Fix JSON parsing integer overflow - `loader.rs:131` now uses `i32::try_from()` with error handling
+- [x] Validate u64→usize casting - `loader.rs:73` now uses `usize::try_from()` with error handling
+- [x] Add file size limits - `loader.rs:8` added `MAX_TENSOR_FILE_SIZE` constant (100MB)
 
 **Resource Management:** (🟡 Important)
 - [ ] Use RAII pattern for temp directories - `plugin/install.rs:169` not cleaned up on panic
-- [ ] Add network timeout - `setup.rs:94` ureq calls have no timeout
+- [x] Add network timeout - `setup.rs:94` added 30-second timeout via ureq Agent
 - [ ] Limit manifest.json size - `plugin/install.rs:414` large manifest can cause DoS
 
 **Error Handling:** (🟡 Important)
-- [ ] Log setup failures - `main.rs:50` `mark_setup_shown()` failure silently ignored
-- [ ] Include build stdout - `plugin/install.rs:258` only stderr shown, stdout missing
-- [ ] Include plugin capabilities in error - `convert.rs:90` show available capabilities in error message
+- [x] Log setup failures - `main.rs:50` now logs warning on `mark_setup_shown()` failure
+- [x] Include build stdout - `plugin/install.rs:258` now shows both stdout and stderr
+- [x] Include plugin capabilities in error - `convert.rs:90` added `format_capabilities()` helper
 
 **Validation:** (🟢 Nice-to-have)
 - [ ] Validate input names - `run.rs:274` allows special characters/empty strings

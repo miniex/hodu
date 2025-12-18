@@ -277,7 +277,7 @@ fn parse_inputs(
         }
 
         let name = parts[0];
-        let path = expand_path(parts[1]);
+        let path = expand_path(parts[1])?;
 
         if !path.exists() {
             return Err(format!("Input file not found: {}", path.display()).into());
@@ -349,13 +349,30 @@ fn output_results(outputs: &HashMap<String, TensorData>, args: &RunArgs) -> Resu
     Ok(())
 }
 
-fn expand_path(path: &str) -> PathBuf {
-    if let Some(stripped) = path.strip_prefix("~/") {
+fn expand_path(path: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    // Expand ~ to home directory
+    let expanded = if let Some(stripped) = path.strip_prefix("~/") {
         if let Some(home) = dirs::home_dir() {
-            return home.join(stripped);
+            home.join(stripped)
+        } else {
+            PathBuf::from(path)
         }
+    } else {
+        PathBuf::from(path)
+    };
+
+    // Canonicalize to resolve .. and symlinks, preventing path traversal
+    // If the file doesn't exist yet, just check for obvious traversal patterns
+    if expanded.exists() {
+        Ok(expanded.canonicalize()?)
+    } else {
+        // For non-existent paths, check for suspicious patterns
+        let path_str = expanded.to_string_lossy();
+        if path_str.contains("..") {
+            return Err("Path traversal (.. sequences) not allowed".into());
+        }
+        Ok(expanded)
     }
-    PathBuf::from(path)
 }
 
 fn parse_device(device_str: &str) -> Result<Device, Box<dyn std::error::Error>> {

@@ -88,7 +88,12 @@ fn convert_model(
             .ok_or_else(|| format!("No model format plugin for .{}", input_ext))?;
 
         if !plugin.capabilities.load_model.unwrap_or(false) {
-            return Err(format!("Plugin {} doesn't support loading models", plugin.name).into());
+            let caps = format_capabilities(&plugin.capabilities);
+            return Err(format!(
+                "Plugin {} doesn't support loading models.\nAvailable capabilities: {}",
+                plugin.name, caps
+            )
+            .into());
         }
 
         let client = manager.get_plugin(&plugin.name)?;
@@ -107,7 +112,12 @@ fn convert_model(
             .ok_or_else(|| format!("No model format plugin for .{}", output_ext))?;
 
         if !plugin.capabilities.save_model.unwrap_or(false) {
-            return Err(format!("Plugin {} doesn't support saving models", plugin.name).into());
+            let caps = format_capabilities(&plugin.capabilities);
+            return Err(format!(
+                "Plugin {} doesn't support saving models.\nAvailable capabilities: {}",
+                plugin.name, caps
+            )
+            .into());
         }
 
         let client = manager.get_plugin(&plugin.name)?;
@@ -211,4 +221,32 @@ fn convert_tensor(
         args.output.file_name().unwrap_or_default().to_string_lossy()
     ));
     Ok(())
+}
+
+/// Format plugin capabilities as a comma-separated string
+fn format_capabilities(caps: &crate::plugins::PluginCapabilities) -> String {
+    let mut list = Vec::new();
+    if caps.load_model.unwrap_or(false) {
+        list.push("load_model");
+    }
+    if caps.save_model.unwrap_or(false) {
+        list.push("save_model");
+    }
+    if caps.load_tensor.unwrap_or(false) {
+        list.push("load_tensor");
+    }
+    if caps.save_tensor.unwrap_or(false) {
+        list.push("save_tensor");
+    }
+    if caps.runner.unwrap_or(false) {
+        list.push("runner");
+    }
+    if caps.builder.unwrap_or(false) {
+        list.push("builder");
+    }
+    if list.is_empty() {
+        "none".to_string()
+    } else {
+        list.join(", ")
+    }
 }

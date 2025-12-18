@@ -35,23 +35,23 @@
 ## Newly Discovered Issues (2nd Analysis)
 
 **Arithmetic Safety:** (🔴 Critical)
-- [ ] Prevent shape product overflow - `tensor.rs:211,224` `shape.iter().product()` needs checked_mul
+- [x] Prevent shape product overflow - `tensor.rs:211,224` uses checked_mul via `checked_numel()`
 
 **Validation:** (🔴 Critical)
-- [ ] Remove expect() calls - `rpc.rs:483,500` Notification serialization should return Result instead
-- [ ] Validate percent range - `rpc.rs:361` u8 type but should only allow 0-100
-- [ ] Validate BuildTarget - `backend.rs:33-38` allows empty strings/invalid triples
-- [ ] Validate zero dimension shapes - `tensor.rs:202` allows invalid shapes like `[0, 5]`
+- [x] Remove expect() calls - `rpc.rs:483,500` now uses `serde_json::json!` macro which is infallible
+- [x] Validate percent range - `rpc.rs:475` clamps percent to 0-100
+- [x] Validate BuildTarget - `backend.rs:92` added `new_checked()` with validation
+- [x] Validate zero dimension shapes - `tensor.rs:224` rejects shapes with zero dimensions
 
 **API Design:** (🟡 Important)
-- [ ] Strengthen Response state validation - `rpc.rs:451` allows both result and error set (JSON-RPC violation)
-- [ ] Validate Request method - `rpc.rs:24` allows empty strings/special characters
+- [x] Strengthen Response state validation - `rpc.rs:527` added `validate()` method returning Result
+- [x] Validate Request method - `rpc.rs:451` added `new_checked()` with validation
 
 **Parsing:** (🟢 Nice-to-have)
-- [ ] Strengthen device ID parsing - `backend.rs:13` allows malformed input like `cuda::0::extra`
-- [ ] Remove unnecessary unwrap_or - `backend.rs:19` `split().next()` never returns None
+- [x] Strengthen device ID parsing - `backend.rs:25` now rejects malformed input like `cuda::0::extra`
+- [x] Remove unnecessary unwrap_or - `backend.rs:48` changed to `unwrap()` with comment
 
 **Documentation:** (🟢 Nice-to-have)
-- [ ] Document parse_device_id - `backend.rs:13` no doc comment
-- [ ] Document device_type - `backend.rs:18` no doc comment
-- [ ] Document BuildTarget fields - `backend.rs:24` no doc comments on fields
+- [x] Document parse_device_id - `backend.rs:14` added doc comment with examples
+- [x] Document device_type - `backend.rs:35` added doc comment with examples
+- [x] Document BuildTarget fields - `backend.rs:76-80` fields now have doc comments

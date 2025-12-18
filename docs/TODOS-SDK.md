@@ -54,9 +54,9 @@
 ## Newly Discovered Issues (2nd Analysis)
 
 **Error Handling:** (🟡 Important)
-- [ ] Handle Mutex poisoning - `testing.rs:250,255,260` `.lock().unwrap()` unusable after panic
-- [ ] Handle notification flush failures - `server.rs:192,216` `stdout().flush()` result ignored
-- [ ] Preserve StreamWriter error context - `server.rs:302,322,342` original error info lost
+- [x] Handle Mutex poisoning - `testing.rs:250,255,260` now uses `unwrap_or_else(|poisoned| poisoned.into_inner())`
+- [x] Handle notification flush failures - `server.rs:192,216` now logs warning to stderr on failure
+- [x] Preserve StreamWriter error context - `server.rs:302,322,342` now includes chunk index in error messages
 
 **Code Quality:** (🟢 Nice-to-have)
 - [x] Use Clippy div_ceil - `server.rs:360` `(data.len() + 2) / 3 * 4` → `.div_ceil(3) * 4`

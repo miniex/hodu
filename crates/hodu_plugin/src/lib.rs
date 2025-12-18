@@ -9,7 +9,7 @@ pub mod rpc;
 pub mod tensor;
 
 // Re-export commonly used types
-pub use backend::{current_host_triple, device_type, parse_device_id, BuildTarget, Device};
+pub use backend::{current_host_triple, device_type, parse_device_id, BuildTarget, BuildTargetError, Device};
 pub use error::{PluginError, PluginResult};
 pub use rpc::*;
 pub use tensor::{ParseDTypeError, PluginDType, TensorData, TensorDataError};

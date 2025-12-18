@@ -183,6 +183,10 @@ pub struct TensorData {
 pub enum TensorDataError {
     /// Data size doesn't match expected size from shape and dtype
     SizeMismatch { expected: usize, actual: usize },
+    /// Shape contains zero dimension (invalid tensor)
+    ZeroDimension,
+    /// Shape product overflows usize
+    ShapeOverflow,
 }
 
 impl std::fmt::Display for TensorDataError {
@@ -190,6 +194,12 @@ impl std::fmt::Display for TensorDataError {
         match self {
             Self::SizeMismatch { expected, actual } => {
                 write!(f, "Data size mismatch: expected {} bytes, got {}", expected, actual)
+            },
+            Self::ZeroDimension => {
+                write!(f, "Shape contains zero dimension")
+            },
+            Self::ShapeOverflow => {
+                write!(f, "Shape product overflows usize")
             },
         }
     }
@@ -205,11 +215,22 @@ impl TensorData {
 
     /// Create new tensor data with validation
     ///
-    /// Returns an error if the data size doesn't match the expected size
-    /// calculated from shape and dtype.
+    /// Returns an error if:
+    /// - Shape contains a zero dimension
+    /// - Shape product overflows usize
+    /// - Data size doesn't match the expected size from shape and dtype
     pub fn new_checked(data: Vec<u8>, shape: Vec<usize>, dtype: PluginDType) -> Result<Self, TensorDataError> {
-        let numel: usize = shape.iter().product();
-        let expected_size = numel * dtype.size_in_bytes();
+        // Check for zero dimensions (unless scalar)
+        if !shape.is_empty() && shape.contains(&0) {
+            return Err(TensorDataError::ZeroDimension);
+        }
+
+        // Use checked multiplication to prevent overflow
+        let numel = Self::checked_numel(&shape).ok_or(TensorDataError::ShapeOverflow)?;
+        let expected_size = numel
+            .checked_mul(dtype.size_in_bytes())
+            .ok_or(TensorDataError::ShapeOverflow)?;
+
         if data.len() != expected_size {
             return Err(TensorDataError::SizeMismatch {
                 expected: expected_size,
@@ -219,9 +240,16 @@ impl TensorData {
         Ok(Self { data, shape, dtype })
     }
 
+    /// Compute number of elements with overflow checking
+    fn checked_numel(shape: &[usize]) -> Option<usize> {
+        shape.iter().try_fold(1usize, |acc, &dim| acc.checked_mul(dim))
+    }
+
     /// Number of elements in the tensor
+    ///
+    /// Note: This may overflow for very large shapes. Use `checked_numel()` for validation.
     pub fn numel(&self) -> usize {
-        self.shape.iter().product()
+        Self::checked_numel(&self.shape).unwrap_or(usize::MAX)
     }
 
     /// Size of data in bytes
@@ -230,8 +258,24 @@ impl TensorData {
     }
 
     /// Check if tensor data is valid (size matches shape * dtype)
+    ///
+    /// Returns false if:
+    /// - Shape contains a zero dimension (unless scalar)
+    /// - Shape product overflows
+    /// - Data size doesn't match expected size
     pub fn is_valid(&self) -> bool {
-        let expected_size = self.numel() * self.dtype.size_in_bytes();
+        // Check for zero dimensions (unless scalar)
+        if !self.shape.is_empty() && self.shape.contains(&0) {
+            return false;
+        }
+
+        // Use checked arithmetic
+        let Some(numel) = Self::checked_numel(&self.shape) else {
+            return false;
+        };
+        let Some(expected_size) = numel.checked_mul(self.dtype.size_in_bytes()) else {
+            return false;
+        };
         self.data.len() == expected_size
     }
 
@@ -349,5 +393,31 @@ mod tests {
         assert!(!PluginDType::U32.is_float());
         assert!(PluginDType::U32.is_integer());
         assert!(!PluginDType::U32.is_signed());
+    }
+
+    #[test]
+    fn test_tensor_data_zero_dimension() {
+        // Zero dimension should fail validation
+        let result = TensorData::new_checked(vec![], vec![0, 5], PluginDType::F32);
+        assert_eq!(result.unwrap_err(), TensorDataError::ZeroDimension);
+
+        let result = TensorData::new_checked(vec![], vec![2, 0, 3], PluginDType::F32);
+        assert_eq!(result.unwrap_err(), TensorDataError::ZeroDimension);
+
+        // is_valid should also reject zero dimensions
+        let tensor = TensorData::new(vec![], vec![0, 5], PluginDType::F32);
+        assert!(!tensor.is_valid());
+    }
+
+    #[test]
+    fn test_tensor_data_overflow() {
+        // Very large shape that would overflow
+        let result = TensorData::new_checked(vec![], vec![usize::MAX, 2], PluginDType::F32);
+        assert_eq!(result.unwrap_err(), TensorDataError::ShapeOverflow);
+
+        // numel should return MAX on overflow instead of panicking
+        let tensor = TensorData::new(vec![], vec![usize::MAX, 2], PluginDType::F32);
+        assert_eq!(tensor.numel(), usize::MAX);
+        assert!(!tensor.is_valid());
     }
 }

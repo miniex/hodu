@@ -389,6 +389,46 @@ pub struct CancelParams {
 // Helper Implementations
 // ============================================================================
 
+/// Error type for Request validation
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RequestValidationError {
+    /// Method name is empty
+    EmptyMethod,
+    /// Method name contains invalid characters
+    InvalidMethodChars,
+}
+
+impl std::fmt::Display for RequestValidationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::EmptyMethod => write!(f, "Method name cannot be empty"),
+            Self::InvalidMethodChars => write!(f, "Method name contains invalid characters"),
+        }
+    }
+}
+
+impl std::error::Error for RequestValidationError {}
+
+/// Error type for Response validation
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ResponseValidationError {
+    /// Both result and error are set
+    BothResultAndError,
+    /// Neither result nor error is set
+    NeitherResultNorError,
+}
+
+impl std::fmt::Display for ResponseValidationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::BothResultAndError => write!(f, "Response cannot have both result and error"),
+            Self::NeitherResultNorError => write!(f, "Response must have either result or error"),
+        }
+    }
+}
+
+impl std::error::Error for ResponseValidationError {}
+
 impl Request {
     /// Create a new JSON-RPC request
     ///
@@ -403,6 +443,41 @@ impl Request {
             params,
             id,
         }
+    }
+
+    /// Create a new JSON-RPC request with validation
+    ///
+    /// Returns an error if the method name is empty or contains invalid characters.
+    pub fn new_checked(
+        method: impl Into<String>,
+        params: Option<serde_json::Value>,
+        id: RequestId,
+    ) -> Result<Self, RequestValidationError> {
+        let method = method.into();
+
+        if method.is_empty() || method.chars().all(|c| c.is_whitespace()) {
+            return Err(RequestValidationError::EmptyMethod);
+        }
+
+        // Method names should be alphanumeric with dots, underscores, slashes, and $ for internal methods
+        let valid_chars = method
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '.' || c == '_' || c == '/' || c == '$');
+        if !valid_chars {
+            return Err(RequestValidationError::InvalidMethodChars);
+        }
+
+        Ok(Self {
+            jsonrpc: JSONRPC_VERSION.to_string(),
+            method,
+            params,
+            id,
+        })
+    }
+
+    /// Check if this request has a valid method name
+    pub fn is_valid(&self) -> bool {
+        !self.method.is_empty() && !self.method.chars().all(|c| c.is_whitespace())
     }
 }
 
@@ -451,6 +526,17 @@ impl Response {
     pub fn is_valid(&self) -> bool {
         matches!((&self.result, &self.error), (Some(_), None) | (None, Some(_)))
     }
+
+    /// Validate this response and return an error if invalid
+    ///
+    /// Per JSON-RPC 2.0 spec, a response must have exactly one of `result` or `error`.
+    pub fn validate(&self) -> Result<(), ResponseValidationError> {
+        match (&self.result, &self.error) {
+            (Some(_), None) | (None, Some(_)) => Ok(()),
+            (Some(_), Some(_)) => Err(ResponseValidationError::BothResultAndError),
+            (None, None) => Err(ResponseValidationError::NeitherResultNorError),
+        }
+    }
 }
 
 impl Notification {
@@ -470,17 +556,20 @@ impl Notification {
     /// Create a progress notification
     ///
     /// # Arguments
-    /// * `percent` - Progress percentage (0-100), None for indeterminate
+    /// * `percent` - Progress percentage (0-100), None for indeterminate. Values > 100 are clamped.
     /// * `message` - Human-readable progress message
     pub fn progress(percent: Option<u8>, message: impl Into<String>) -> Self {
-        let params = ProgressParams {
-            percent,
-            message: message.into(),
-        };
-        // ProgressParams only contains primitive types (Option<u8>, String) which always serialize
+        // Clamp percent to valid range 0-100
+        let percent = percent.map(|p| p.min(100));
+        let message = message.into();
+
+        // Use json! macro which is infallible for primitive types
         Self::new(
             methods::NOTIFY_PROGRESS,
-            Some(serde_json::to_value(params).expect("ProgressParams serialization cannot fail")),
+            Some(serde_json::json!({
+                "percent": percent,
+                "message": message
+            })),
         )
     }
 
@@ -490,14 +579,16 @@ impl Notification {
     /// * `level` - Log level: "error", "warn", "info", "debug", "trace"
     /// * `message` - Log message content
     pub fn log(level: impl Into<String>, message: impl Into<String>) -> Self {
-        let params = LogParams {
-            level: level.into(),
-            message: message.into(),
-        };
-        // LogParams only contains primitive types (String, String) which always serialize
+        let level = level.into();
+        let message = message.into();
+
+        // Use json! macro which is infallible for primitive types
         Self::new(
             methods::NOTIFY_LOG,
-            Some(serde_json::to_value(params).expect("LogParams serialization cannot fail")),
+            Some(serde_json::json!({
+                "level": level,
+                "message": message
+            })),
         )
     }
 }
@@ -828,5 +919,79 @@ mod tests {
         let parsed: Request = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.method, "test");
         assert_eq!(parsed.id, RequestId::Number(1));
+    }
+
+    #[test]
+    fn test_request_new_checked_valid() {
+        let result = Request::new_checked("backend.run", None, 1.into());
+        assert!(result.is_ok());
+
+        let result = Request::new_checked("$/ping", None, 1.into());
+        assert!(result.is_ok());
+
+        let result = Request::new_checked("format.load_model", None, 1.into());
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_request_new_checked_empty() {
+        let result = Request::new_checked("", None, 1.into());
+        assert_eq!(result.unwrap_err(), RequestValidationError::EmptyMethod);
+
+        let result = Request::new_checked("   ", None, 1.into());
+        assert_eq!(result.unwrap_err(), RequestValidationError::EmptyMethod);
+    }
+
+    #[test]
+    fn test_request_new_checked_invalid_chars() {
+        let result = Request::new_checked("method with spaces", None, 1.into());
+        assert_eq!(result.unwrap_err(), RequestValidationError::InvalidMethodChars);
+
+        let result = Request::new_checked("method\nwith\nnewlines", None, 1.into());
+        assert_eq!(result.unwrap_err(), RequestValidationError::InvalidMethodChars);
+    }
+
+    #[test]
+    fn test_request_is_valid() {
+        let valid = Request::new("test", None, 1.into());
+        assert!(valid.is_valid());
+
+        let invalid = Request::new("", None, 1.into());
+        assert!(!invalid.is_valid());
+    }
+
+    #[test]
+    fn test_response_validate() {
+        // Valid success
+        let response = Response::success(1.into(), serde_json::json!({}));
+        assert!(response.validate().is_ok());
+
+        // Valid error
+        let response = Response::error(1.into(), RpcError::internal_error("error"));
+        assert!(response.validate().is_ok());
+
+        // Invalid: both set
+        let response = Response {
+            jsonrpc: JSONRPC_VERSION.to_string(),
+            result: Some(serde_json::json!({})),
+            error: Some(RpcError::internal_error("error")),
+            id: 1.into(),
+        };
+        assert_eq!(
+            response.validate().unwrap_err(),
+            ResponseValidationError::BothResultAndError
+        );
+
+        // Invalid: neither set
+        let response = Response {
+            jsonrpc: JSONRPC_VERSION.to_string(),
+            result: None,
+            error: None,
+            id: 1.into(),
+        };
+        assert_eq!(
+            response.validate().unwrap_err(),
+            ResponseValidationError::NeitherResultNorError
+        );
     }
 }

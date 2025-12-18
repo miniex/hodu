@@ -5,11 +5,25 @@ use hodu_core::format::hdt;
 use hodu_plugin::{PluginDType, TensorData};
 use std::path::Path;
 
+/// Maximum file size for tensor loading (100 MB)
+const MAX_TENSOR_FILE_SIZE: u64 = 100 * 1024 * 1024;
+
 pub fn load_tensor_file(
     path: &Path,
     expected_shape: &[usize],
     expected_dtype: PluginDType,
 ) -> Result<TensorData, Box<dyn std::error::Error>> {
+    // Check file size before loading
+    let metadata = std::fs::metadata(path)?;
+    if metadata.len() > MAX_TENSOR_FILE_SIZE {
+        return Err(format!(
+            "Tensor file too large: {} bytes (max {} MB)",
+            metadata.len(),
+            MAX_TENSOR_FILE_SIZE / (1024 * 1024)
+        )
+        .into());
+    }
+
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
 
     match ext {
@@ -70,7 +84,10 @@ fn load_tensor_json(
         .and_then(|v| v.as_array())
         .ok_or("Missing 'shape' field")?
         .iter()
-        .map(|v| v.as_u64().map(|n| n as usize).ok_or("Invalid shape dimension"))
+        .map(|v| {
+            let n = v.as_u64().ok_or("Invalid shape dimension: expected integer")?;
+            usize::try_from(n).map_err(|_| "Shape dimension too large for this platform")
+        })
         .collect::<Result<Vec<_>, _>>()?;
 
     if shape != expected_shape {
@@ -127,14 +144,28 @@ fn json_array_to_bytes(arr: &[serde_json::Value], dtype: PluginDType) -> Result<
             }
         },
         PluginDType::I32 => {
-            for v in arr {
-                let n = v.as_i64().ok_or("Expected integer")? as i32;
-                bytes.extend_from_slice(&n.to_le_bytes());
+            for (i, v) in arr.iter().enumerate() {
+                let n = v.as_i64().ok_or("Expected integer")?;
+                let n32 = i32::try_from(n).map_err(|_| format!("Value at index {} ({}) overflows i32", i, n))?;
+                bytes.extend_from_slice(&n32.to_le_bytes());
             }
         },
         PluginDType::I64 => {
             for v in arr {
                 let n = v.as_i64().ok_or("Expected integer")?;
+                bytes.extend_from_slice(&n.to_le_bytes());
+            }
+        },
+        PluginDType::U32 => {
+            for (i, v) in arr.iter().enumerate() {
+                let n = v.as_u64().ok_or("Expected unsigned integer")?;
+                let n32 = u32::try_from(n).map_err(|_| format!("Value at index {} ({}) overflows u32", i, n))?;
+                bytes.extend_from_slice(&n32.to_le_bytes());
+            }
+        },
+        PluginDType::U64 => {
+            for v in arr {
+                let n = v.as_u64().ok_or("Expected unsigned integer")?;
                 bytes.extend_from_slice(&n.to_le_bytes());
             }
         },
