@@ -240,6 +240,14 @@ pub struct InitializeParams {
     pub protocol_version: String,
 }
 
+impl InitializeParams {
+    /// Validate the parameters
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        validate_non_empty(&self.plugin_version, "plugin_version")?;
+        validate_non_empty(&self.protocol_version, "protocol_version")
+    }
+}
+
 /// Plugin metadata for discovery and compatibility checking
 ///
 /// Optional metadata that plugins can provide for better integration.
@@ -547,6 +555,17 @@ impl TensorOutput {
         }
     }
 
+    /// Validate the tensor output
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        if !self.is_valid_name() {
+            return Err(ValidationError {
+                field: "name".to_string(),
+                message: "invalid tensor name (empty, contains control chars, or path separators)".to_string(),
+            });
+        }
+        validate_path(&self.path, "path")
+    }
+
     /// Validate tensor name (non-empty, no control chars, no path separators)
     pub fn is_valid_name(&self) -> bool {
         !self.name.is_empty()
@@ -605,6 +624,21 @@ pub struct ProgressParams {
     pub message: String,
 }
 
+impl ProgressParams {
+    /// Validate the parameters
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        if let Some(percent) = self.percent {
+            if percent > 100 {
+                return Err(ValidationError {
+                    field: "percent".to_string(),
+                    message: format!("percent must be 0-100, got {}", percent),
+                });
+            }
+        }
+        validate_non_empty(&self.message, "message")
+    }
+}
+
 /// Valid log levels for LogParams
 pub const VALID_LOG_LEVELS: &[&str] = &["error", "warn", "info", "debug", "trace"];
 
@@ -626,6 +660,21 @@ impl LogParams {
             level: level.into(),
             message: message.into(),
         }
+    }
+
+    /// Validate the parameters
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        if !self.is_valid_level() {
+            return Err(ValidationError {
+                field: "level".to_string(),
+                message: format!(
+                    "invalid log level '{}', expected one of: {}",
+                    self.level,
+                    VALID_LOG_LEVELS.join(", ")
+                ),
+            });
+        }
+        validate_non_empty(&self.message, "message")
     }
 
     /// Check if the log level is valid

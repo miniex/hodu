@@ -37,7 +37,16 @@ pub fn update_plugins(name: Option<&str>) -> Result<(), Box<dyn std::error::Erro
     }
 
     // Try to fetch the official registry for version info
-    let official_registry = fetch_official_registry().ok();
+    let official_registry = match fetch_official_registry() {
+        Ok(reg) => Some(reg),
+        Err(e) => {
+            output::warning(&format!(
+                "Failed to fetch official registry: {}. Falling back to source-based update.",
+                e
+            ));
+            None
+        },
+    };
 
     for plugin in plugins_to_update {
         output::updating(&plugin.name);

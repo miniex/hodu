@@ -36,14 +36,6 @@ pub fn derive_plugin_method(input: TokenStream) -> TokenStream {
         impl #name {
             /// Get the method name for this handler
             pub const METHOD_NAME: &'static str = #method_name;
-
-            /// Register this handler with a plugin server
-            pub fn register<S>(server: S) -> S
-            where
-                S: PluginServerExt,
-            {
-                server.register_method(Self::METHOD_NAME, Self::handle)
-            }
         }
     };
 
@@ -125,13 +117,7 @@ pub fn plugin_handler(attr: TokenStream, item: TokenStream) -> TokenStream {
         #fn_async fn #fn_name(#fn_inputs) #fn_output #fn_block
 
         /// Register this handler with a plugin server (auto-generated)
-        pub fn #register_fn_name<F, Fut, P, R>(server: hodu_plugin_sdk::server::PluginServer) -> hodu_plugin_sdk::server::PluginServer
-        where
-            F: Fn(hodu_plugin_sdk::Context, P) -> Fut + Send + Sync + 'static,
-            Fut: std::future::Future<Output = Result<R, hodu_plugin_sdk::rpc::RpcError>> + Send + 'static,
-            P: serde::de::DeserializeOwned + Send + 'static,
-            R: serde::Serialize + 'static,
-        {
+        pub fn #register_fn_name(server: hodu_plugin_sdk::server::PluginServer) -> hodu_plugin_sdk::server::PluginServer {
             server.method(#method_name, #fn_name)
         }
     };

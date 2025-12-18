@@ -101,3 +101,16 @@
 **Code Quality:** (🟢 Nice-to-have)
 - [x] Use RAII guard in convert command - `convert.rs:11-33` added `TempFileGuard` with automatic cleanup on drop
 - [x] Refactor remove_plugin recursion - `plugin.rs:493-523` inlined name resolution logic instead of recursive call
+
+---
+
+## Newly Discovered Issues (5th Analysis)
+
+**Security:** (🔴 Critical)
+- [x] Add git clone timeout - `install.rs:250-266` added 5-minute timeout using `wait-timeout` crate, kills process on timeout
+
+**Error Handling:** (🔴 Critical)
+- [x] Show registry fetch errors to user - `update.rs:40-49` now displays warning instead of silently ignoring
+
+**Reliability:** (🟡 Important)
+- [x] Make backup restoration failure return error - `install.rs:500-506` now returns error instead of just warning, prevents broken state

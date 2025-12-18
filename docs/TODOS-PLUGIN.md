@@ -81,3 +81,13 @@
 **Code Quality:** (🟢 Nice-to-have)
 - [x] Refactor duplicate validation logic - `rpc.rs:300-382` `is_within_limits()` now calls `validate_limits().is_ok()`
 - [x] Consider Result for `numel()` overflow - `tensor.rs:252` now returns `Option<usize>`, `None` on overflow; added `numel_unchecked()` for backwards compatibility
+
+---
+
+## Newly Discovered Issues (5th Analysis)
+
+**Validation:** (🟡 Important)
+- [x] Add validate() to InitializeParams - `rpc.rs:243-248` added validation for plugin_version and protocol_version
+- [x] Add validate() to ProgressParams - `rpc.rs:616-628` added validation for percent (0-100) and message
+- [x] Add validate() to LogParams - `rpc.rs:654-667` added validation for level and message
+- [x] Add validate() to TensorOutput - `rpc.rs:558-567` added validation matching TensorInput pattern

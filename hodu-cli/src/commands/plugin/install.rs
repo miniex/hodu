@@ -8,6 +8,7 @@ use crate::plugins::{
 use hodu_plugin::PLUGIN_VERSION;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use wait_timeout::ChildExt;
 
 /// Maximum manifest.json file size (1MB)
 const MAX_MANIFEST_SIZE: u64 = 1024 * 1024;
@@ -239,7 +240,7 @@ pub fn install_from_git(
     }
     let temp_dir = TempDirGuard::new(temp_dir_path);
 
-    // Clone repository (quietly)
+    // Clone repository (quietly) with timeout
     let mut git_cmd = Command::new("git");
     git_cmd.arg("clone").arg("-q");
     if tag.is_none() {
@@ -247,7 +248,21 @@ pub fn install_from_git(
     }
     git_cmd.arg(url).arg(temp_dir.path());
 
-    let status = git_cmd.status()?;
+    const GIT_CLONE_TIMEOUT_SECS: u64 = 300; // 5 minutes
+    let mut child = git_cmd.spawn()?;
+    let status = match child.wait_timeout(std::time::Duration::from_secs(GIT_CLONE_TIMEOUT_SECS))? {
+        Some(status) => status,
+        None => {
+            // Timeout - kill the process
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(format!(
+                "Git clone timed out after {} seconds. Repository may be too large or network is slow: {}",
+                GIT_CLONE_TIMEOUT_SECS, url
+            )
+            .into());
+        },
+    };
     if !status.success() {
         return Err(format!("Failed to clone repository: {}", url).into());
     }
@@ -482,9 +497,14 @@ pub fn install_from_path(
     // Copy new binary (with rollback on failure)
     if let Err(e) = std::fs::copy(&bin_path, &dest_path) {
         if has_backup {
-            // Restore backup
+            // Restore backup - fail if restoration fails to avoid broken state
             if let Err(restore_err) = std::fs::rename(&backup_path, &dest_path) {
-                output::warning(&format!("Failed to restore backup: {}", restore_err));
+                return Err(format!(
+                    "Failed to copy plugin binary: {}. Additionally, failed to restore backup: {}. \
+                     Plugin may be in broken state - manual intervention required.",
+                    e, restore_err
+                )
+                .into());
             }
         }
         return Err(format!("Failed to copy plugin binary: {}", e).into());

@@ -115,3 +115,11 @@
 
 **Build Script:** (🟢 Nice-to-have)
 - [x] Handle missing TARGET env var - `build.rs:4` now uses `unwrap_or_else` with "unknown" fallback
+
+---
+
+## Newly Discovered Issues (5th Analysis)
+
+**Macro Safety:** (🟡 Important)
+- [x] Fix PluginMethod macro dead code - `macros/lib.rs:35-40` removed reference to non-existent `PluginServerExt` trait, now only generates `METHOD_NAME` constant
+- [x] Fix plugin_handler macro unnecessary generics - `macros/lib.rs:116-123` removed unused generic type parameters from generated register function
