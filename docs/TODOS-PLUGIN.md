@@ -173,8 +173,19 @@
 
 **Code Quality:** (🟡 Important)
 - [x] Optimize sanitize() allocations - `rpc.rs:603-627` now only allocates when truncation needed
-- [ ] Use logging crate instead of eprintln - `rpc.rs:1481-1490` library shouldn't write stderr
+- [x] Use logging crate instead of eprintln - `rpc.rs:1618,1676` now uses `log::warn!` instead of `eprintln!`
 
 **API Consistency:** (🟢 Nice-to-have)
 - [x] Unify new() vs new_checked() pattern - added `new_checked()` to TensorInput, TensorOutput, and LogParams for consistency with Request, TensorData, BuildTarget
 - [x] Add error codes to ValidationError - `rpc.rs:78-152` added ValidationErrorCode enum (Empty, InvalidChars, TooLong, PathTraversal, EncodedPath, HomeExpansion, TooManyItems, OutOfRange, Other) and factory methods
+
+---
+
+## Newly Discovered Issues (11th Analysis)
+
+**Validation:** (🟡 Important)
+- [x] Add semver validation helper - `rpc.rs:257-292` added `is_valid_semver()` and `validate_semver()`, `InitializeParams::validate_strict()` for strict format checking
+- [x] Add error chain depth limit - `rpc.rs:1526` `with_error_cause()` now limits to 100 causes to prevent infinite loops
+
+**Documentation:** (🟢 Nice-to-have)
+- [x] Document BuildTarget "unknown" special case - `backend.rs:108-115` added documentation explaining when "unknown" triple is valid

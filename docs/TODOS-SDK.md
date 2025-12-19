@@ -205,3 +205,10 @@
 **Code Quality:** (🟢 Nice-to-have)
 - [x] Extract notification pattern - `server.rs:236-312` extracted `send_notification()` helper
 - [x] Add try_progress/try_log to Context - `context.rs:140-158` added try_progress/try_log methods
+
+---
+
+## Newly Discovered Issues (11th Analysis)
+
+**Macro Safety:** (🟡 Important)
+- [x] Fix macro attribute parsing error handling - `macros/lib.rs:34-91` now returns proper compile errors for malformed `#[method(...)]` attributes instead of silently falling back to snake_case

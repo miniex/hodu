@@ -30,19 +30,22 @@ pub fn derive_plugin_method(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
     let name = &input.ident;
-    let method_name = extract_method_name(&input);
 
-    let expanded = quote! {
-        impl #name {
-            /// Get the method name for this handler
-            pub const METHOD_NAME: &'static str = #method_name;
-        }
-    };
-
-    TokenStream::from(expanded)
+    match extract_method_name(&input) {
+        Ok(method_name) => {
+            let expanded = quote! {
+                impl #name {
+                    /// Get the method name for this handler
+                    pub const METHOD_NAME: &'static str = #method_name;
+                }
+            };
+            TokenStream::from(expanded)
+        },
+        Err(err) => err.to_compile_error().into(),
+    }
 }
 
-fn extract_method_name(input: &DeriveInput) -> String {
+fn extract_method_name(input: &DeriveInput) -> Result<String, syn::Error> {
     for attr in &input.attrs {
         if attr.path().is_ident("method") {
             // Parse #[method(name = "...")] using proper syn parsing
@@ -55,19 +58,37 @@ fn extract_method_name(input: &DeriveInput) -> String {
                             ..
                         }) = &nv.value
                         {
-                            return lit_str.value();
+                            return Ok(lit_str.value());
                         }
+                        return Err(syn::Error::new_spanned(
+                            &nv.value,
+                            "expected string literal for method name",
+                        ));
                     }
+                    return Err(syn::Error::new_spanned(
+                        &nv.path,
+                        "expected `name = \"...\"` in #[method(...)]",
+                    ));
                 }
                 // Also try parsing as just a string literal: #[method("name")]
                 if let Ok(lit_str) = syn::parse2::<syn::LitStr>(meta.tokens.clone()) {
-                    return lit_str.value();
+                    return Ok(lit_str.value());
                 }
+                // Attribute present but couldn't parse
+                return Err(syn::Error::new_spanned(
+                    attr,
+                    "invalid #[method(...)] attribute, expected #[method(name = \"...\")] or #[method(\"...\")]",
+                ));
             }
+            // #[method] without arguments - error
+            return Err(syn::Error::new_spanned(
+                attr,
+                "#[method] attribute requires a method name: #[method(name = \"...\")] or #[method(\"...\")]",
+            ));
         }
     }
-    // Default: convert struct name to snake_case method name
-    to_snake_case(&input.ident.to_string())
+    // No #[method] attribute: default to snake_case conversion
+    Ok(to_snake_case(&input.ident.to_string()))
 }
 
 fn to_snake_case(s: &str) -> String {

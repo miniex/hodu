@@ -99,8 +99,20 @@ impl BuildTarget {
     /// - Triple is empty or has invalid format
     /// - Device is empty
     ///
+    /// # Triple Format
+    ///
     /// Valid triple formats: `<arch>-<vendor>-<os>` or `<arch>-<vendor>-<os>-<env>`
+    ///
     /// Examples: `x86_64-unknown-linux-gnu`, `aarch64-apple-darwin`
+    ///
+    /// # Special Case: "unknown"
+    ///
+    /// The literal string `"unknown"` is allowed as a special case for scenarios
+    /// where the target triple is not yet determined or when operating in a
+    /// platform-agnostic mode. This is useful for:
+    /// - Build scripts that defer target detection
+    /// - Testing environments where the target doesn't matter
+    /// - Fallback cases when `current_host_triple()` fails
     pub fn new_checked(triple: impl Into<String>, device: impl Into<String>) -> Result<Self, BuildTargetError> {
         let triple = triple.into();
         let device = device.into();

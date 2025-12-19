@@ -254,6 +254,46 @@ fn validate_non_empty(value: &str, field: &str) -> Result<(), ValidationError> {
     Ok(())
 }
 
+/// Check if a string is a valid semver format (MAJOR.MINOR.PATCH)
+///
+/// This is a basic check that verifies the format without strict semver spec compliance.
+/// Accepts versions like "1.0.0", "0.1.0", "10.20.30".
+/// Does not accept pre-release or build metadata suffixes.
+///
+/// # Examples
+///
+/// ```ignore
+/// assert!(is_valid_semver("1.0.0"));
+/// assert!(is_valid_semver("0.1.0"));
+/// assert!(!is_valid_semver("1.0"));      // Missing patch
+/// assert!(!is_valid_semver("v1.0.0"));   // Has prefix
+/// assert!(!is_valid_semver("1.0.0-rc")); // Has suffix
+/// ```
+pub fn is_valid_semver(version: &str) -> bool {
+    let parts: Vec<&str> = version.split('.').collect();
+    if parts.len() != 3 {
+        return false;
+    }
+    parts
+        .iter()
+        .all(|part| !part.is_empty() && part.chars().all(|c| c.is_ascii_digit()))
+}
+
+/// Validate a semver string field
+fn validate_semver(value: &str, field: &str) -> Result<(), ValidationError> {
+    validate_non_empty(value, field)?;
+    if !is_valid_semver(value) {
+        return Err(ValidationError::invalid_chars(
+            field,
+            format!(
+                "invalid semver format '{}', expected MAJOR.MINOR.PATCH (e.g., '1.0.0')",
+                value
+            ),
+        ));
+    }
+    Ok(())
+}
+
 // ============================================================================
 // Core JSON-RPC Types
 // ============================================================================
@@ -515,11 +555,19 @@ impl InitializeParams {
     ///
     /// Checks that version strings are non-empty. Note that this does not
     /// validate the semver format - it only ensures the fields are present.
-    /// Callers should perform additional validation if strict semver
-    /// compliance is required.
+    /// Use [`validate_strict`] if semver format validation is required.
     pub fn validate(&self) -> Result<(), ValidationError> {
         validate_non_empty(&self.plugin_version, "plugin_version")?;
         validate_non_empty(&self.protocol_version, "protocol_version")
+    }
+
+    /// Validate the parameters with strict semver format checking
+    ///
+    /// Checks that version strings are non-empty AND are valid semver format
+    /// (MAJOR.MINOR.PATCH, e.g., "1.0.0").
+    pub fn validate_strict(&self) -> Result<(), ValidationError> {
+        validate_semver(&self.plugin_version, "plugin_version")?;
+        validate_semver(&self.protocol_version, "protocol_version")
     }
 }
 
@@ -1521,10 +1569,16 @@ impl RpcError {
     /// Add a cause from a std::error::Error
     ///
     /// Automatically extracts the error chain using `source()`.
+    /// Limits to 100 causes to prevent infinite loops from cyclic error chains.
     pub fn with_error_cause<E: std::error::Error>(self, error: &E) -> Self {
+        const MAX_ERROR_CHAIN_DEPTH: usize = 100;
         let mut causes = vec![error.to_string()];
         let mut source = error.source();
         while let Some(err) = source {
+            if causes.len() >= MAX_ERROR_CHAIN_DEPTH {
+                causes.push("... (chain truncated)".to_string());
+                break;
+            }
             causes.push(err.to_string());
             source = err.source();
         }
@@ -1563,9 +1617,9 @@ impl RpcError {
                             if arr.len() < MAX_HINTS {
                                 arr.push(serde_json::json!(hint_str));
                             } else {
-                                // Log warning in both debug and release builds
-                                eprintln!(
-                                    "Warning: Maximum hints ({}) reached, hint dropped: {}",
+                                // Log warning - hints limit exceeded
+                                log::warn!(
+                                    "Maximum hints ({}) reached, hint dropped: {}",
                                     MAX_HINTS,
                                     if hint_str.len() > 50 {
                                         // UTF-8 safe truncation for preview
@@ -1621,12 +1675,8 @@ impl RpcError {
     pub fn with_field(mut self, key: impl Into<String>, value: serde_json::Value) -> Self {
         let key = key.into();
         // Warn if using reserved field names (they might be overwritten by other methods)
-        // Log in all builds since this indicates a programming error
         if RESERVED_ERROR_FIELDS.contains(&key.as_str()) {
-            eprintln!(
-                "Warning: with_field() using reserved field name '{}', may be overwritten",
-                key
-            );
+            log::warn!("with_field() using reserved field name '{}', may be overwritten", key);
         }
         self.data = Some(match self.data {
             Some(mut data) => {

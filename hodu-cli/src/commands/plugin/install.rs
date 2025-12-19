@@ -299,7 +299,11 @@ pub fn install_from_git(
     };
 
     if !install_path.exists() {
-        return Err(format!("Subdirectory '{}' not found in repository", subdir.unwrap_or("")).into());
+        return Err(match subdir {
+            Some(s) => format!("Subdirectory '{}' not found in repository", s),
+            None => "Cloned repository directory not found".to_string(),
+        }
+        .into());
     }
 
     // Install from the cloned path

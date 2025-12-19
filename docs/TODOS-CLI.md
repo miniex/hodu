@@ -206,3 +206,14 @@
 **Code Quality:** (🟢 Nice-to-have)
 - [x] Extract plugin listing logic - `plugin.rs:130` added `list_plugin_section()` generic helper with closures
 - [x] Add per-plugin timeout in doctor - `doctor.rs:71` now uses 10-second timeout per plugin
+
+---
+
+## Newly Discovered Issues (11th Analysis)
+
+**Bug Fix:** (🔴 Critical)
+- [x] Fix `is_multiple_of()` - `clean.rs:133` now stable in Rust 1.92.0, kept as-is
+
+**Error Handling:** (🟡 Important)
+- [x] Improve subdir error message - `install.rs:302-305` now shows appropriate message for None vs Some case
+- [x] Add warning on plugin connection failure - `doctor.rs:86-89` now shows warning instead of silent skip

@@ -83,7 +83,10 @@ pub fn execute() -> Result<(), Box<dyn std::error::Error>> {
         // Get plugin client and fetch targets
         let client = match manager.get_plugin(&plugin.name) {
             Ok(c) => c,
-            Err(_) => continue,
+            Err(e) => {
+                eprintln!("  Warning: Failed to connect to plugin '{}': {}", plugin.name, e);
+                continue;
+            },
         };
 
         match client.list_targets() {
