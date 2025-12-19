@@ -137,3 +137,21 @@
 **API Consistency:** (🟢 Nice-to-have)
 - [x] Document percent clamping vs validation strategy - `rpc.rs:956-970` added table documenting clamping vs validation strategy
 - [x] Add length limits to error message strings - `rpc.rs:38-39` added MAX_ERROR_STRING_LEN (64KB), used in with_cause() and with_hint()
+
+---
+
+## Newly Discovered Issues (9th Analysis)
+
+**Safety:** (🔴 Critical)
+- [x] Fix UTF-8 string slicing panic - `rpc.rs:48-60` added `truncate_utf8_owned()` helper, used in `with_cause()` and `with_hint()`
+
+**Validation:** (🟡 Important)
+- [x] Add metadata string length limits - `rpc.rs:44-60` added MAX_METADATA_* constants, `PluginMetadataRpc::validate()` and `sanitize()` methods
+- [x] Strengthen path traversal detection - `rpc.rs:129-158` now checks URL-encoded forms (%2e, %25, %5c, %2f)
+
+**Testing:** (🟡 Important)
+- [x] Add validation method tests - `rpc.rs:1738-1986` added 11 tests for all param validation methods
+
+**Documentation:** (🟢 Nice-to-have)
+- [x] Document InitializeParams version format - `rpc.rs:411-462` added semver format, compatibility rules, example
+- [x] Make hint truncation warnings consistent - `rpc.rs:1502-1509` with_field() now logs in all builds (removed #[cfg(debug_assertions)])

@@ -160,3 +160,25 @@
 
 **Macro Safety:** (🟢 Nice-to-have)
 - [x] Improve macro error messages - macros already use `syn::Error::new_spanned()` for proper compiler errors
+
+---
+
+## Newly Discovered Issues (9th Analysis)
+
+**Safety:** (🔴 Critical)
+- [x] Fix UTF-8 string slicing panic - `server.rs:72-88` added `truncate_utf8()` helper using `is_char_boundary()`, used in notify_progress/notify_log
+- [x] Use proper RequestId for parse errors - `server.rs` now uses `RequestId::Null` for parse errors (added Null variant with custom serde)
+
+**Memory Management:** (🔴 Critical)
+- [x] Fix memory leak in ActiveRequestGuard drop - `server.rs:524-545` now retries up to 5 times with yield, logs warning on failure
+
+**Performance:** (🟡 Important)
+- [x] Reduce Arc clones per request - `server.rs:1254-1274` now caches request_id clone, reuses for context/insert/guard
+
+**Error Handling:** (🟡 Important)
+- [x] Log state downcast failures in release builds - `context.rs:84-91` now logs warning in all builds (removed #[cfg(debug_assertions)])
+- [x] Propagate lock poison errors in testing - `testing.rs:235-260` now logs warning when recovering from poisoned lock
+
+**API Consistency:** (🟢 Nice-to-have)
+- [x] Add response size limit - `server.rs:72-76` added MAX_RESPONSE_SIZE (16MB), checks after serialization
+- [x] Improve hook coverage - `server.rs:846-859` documented hook coverage (pre-parsing errors don't call hooks by design)

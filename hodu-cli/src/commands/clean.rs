@@ -101,7 +101,11 @@ fn remove_dir_with_progress(path: &Path, total_files: usize) -> Result<(), Box<d
 
     let elapsed = start.elapsed();
     if elapsed.as_secs() >= 1 {
-        eprintln!("\r  Deleted {} files in {:.1}s", deleted.load(Ordering::Relaxed), elapsed.as_secs_f32());
+        eprintln!(
+            "\r  Deleted {} files in {:.1}s",
+            deleted.load(Ordering::Relaxed),
+            elapsed.as_secs_f32()
+        );
     }
 
     Ok(())
@@ -126,7 +130,7 @@ fn remove_dir_recursive(path: &Path, deleted: &AtomicUsize, total: usize) -> Res
                 let count = deleted.fetch_add(1, Ordering::Relaxed) + 1;
 
                 // Print progress periodically
-                if count % PROGRESS_UPDATE_INTERVAL == 0 {
+                if count.is_multiple_of(PROGRESS_UPDATE_INTERVAL) {
                     let percent = (count * 100) / total;
                     eprint!("\r  Deleting... {}% ({}/{})", percent, count, total);
                 }

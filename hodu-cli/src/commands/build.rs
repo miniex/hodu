@@ -92,6 +92,18 @@ pub fn execute(args: BuildArgs) -> Result<(), Box<dyn std::error::Error>> {
         if !parent.as_os_str().is_empty() && !parent.exists() {
             return Err(format!("Output directory does not exist: {}", parent.display()).into());
         }
+        // Check write permission on parent directory
+        if !parent.as_os_str().is_empty() && parent.exists() {
+            let test_path = parent.join(".hodu_write_test");
+            match std::fs::File::create(&test_path) {
+                Ok(_) => {
+                    let _ = std::fs::remove_file(&test_path);
+                },
+                Err(_) => {
+                    return Err(format!("Cannot write to output directory: {}", parent.display()).into());
+                },
+            }
+        }
     }
 
     let extension = model.extension().and_then(|e| e.to_str()).map(|e| e.to_lowercase());
@@ -117,7 +129,11 @@ pub fn execute(args: BuildArgs) -> Result<(), Box<dyn std::error::Error>> {
 
     // Load model (using format plugin if needed)
     let snapshot_path = if let Some(format_entry) = format_plugin {
-        output::loading(&format!("{}", model.file_name().unwrap_or_default().to_string_lossy()));
+        let display_name = model
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| model.display().to_string());
+        output::loading(&display_name);
         let client = manager.get_plugin(&format_entry.name)?;
         let result = client.load_model(path_to_str(&model)?)?;
         PathBuf::from(result.snapshot_path)
@@ -138,7 +154,10 @@ pub fn execute(args: BuildArgs) -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // Build message
-    let model_name = model.file_name().unwrap_or_default().to_string_lossy();
+    let model_name = model
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| model.display().to_string());
     output::compiling(&format!("{} ({}, {})", model_name, build_target.triple, device));
 
     // Call backend.build via JSON-RPC

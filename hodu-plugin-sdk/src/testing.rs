@@ -232,7 +232,10 @@ impl TestHarness {
     pub fn get_logs(&self) -> Vec<LogEntry> {
         self.logs
             .read()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unwrap_or_else(|poisoned| {
+                eprintln!("Warning: TestHarness logs lock was poisoned, data may be incomplete");
+                poisoned.into_inner()
+            })
             .clone()
     }
 
@@ -242,13 +245,19 @@ impl TestHarness {
     pub fn clear_logs(&self) {
         self.logs
             .write()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unwrap_or_else(|poisoned| {
+                eprintln!("Warning: TestHarness logs lock was poisoned, clearing potentially incomplete data");
+                poisoned.into_inner()
+            })
             .clear();
     }
 
     /// Assert that a specific log message was captured
     pub fn assert_logged(&self, level: &str, message_contains: &str) {
-        let logs = self.logs.read().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let logs = self.logs.read().unwrap_or_else(|poisoned| {
+            eprintln!("Warning: TestHarness logs lock was poisoned, assertion may be unreliable");
+            poisoned.into_inner()
+        });
         let found = logs
             .iter()
             .any(|log| log.level == level && log.message.contains(message_contains));

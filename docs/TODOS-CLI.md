@@ -165,3 +165,23 @@
 **UX:** (🟢 Nice-to-have)
 - [x] Add progress indication for slow clean operations - `clean.rs:95-142` added progress for dirs with 100+ files
 - [x] Add verbose mode for plugin installation - `plugin.rs:87-89` added `-v/--verbose` flag to show cargo/git output
+
+---
+
+## Newly Discovered Issues (9th Analysis)
+
+**Concurrency:** (🔴 Critical)
+- [x] Fix race condition in plugin installation - `install.rs:486` now acquires lock BEFORE loading registry via `get_registry_path()` helper
+
+**Validation:** (🟡 Important)
+- [x] Fix TOCTOU bug in remove_plugin - `plugin.rs:504-526` now extracts name/version in single lookup block
+- [x] Add write permission check for output path - `build.rs:96-110` now creates test file to verify write permission
+
+**Error Handling:** (🟡 Important)
+- [x] Improve unwrap_or_default() usage - `build.rs:136-139,161-164`, `inspect.rs:42-47` now use full path as fallback
+- [x] Log cancellation errors - `run.rs:222-224` now logs warning on `handle.cancel()` failure
+
+**Code Quality:** (🟢 Nice-to-have)
+- [x] Sanitize file paths in error messages - intentionally showing full paths for CLI debugging (documented as acceptable)
+- [x] Reduce string allocations in list_plugins - `plugin.rs:140-243` now reuses buffers across iterations
+- [x] Add device string validation - `run.rs:466-483` now validates characters, length, rejects dangerous patterns

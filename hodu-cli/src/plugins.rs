@@ -42,3 +42,8 @@ pub fn load_registry_mut() -> Result<(PluginRegistry, std::path::PathBuf), Box<d
     let registry = PluginRegistry::load(&registry_path)?;
     Ok((registry, registry_path))
 }
+
+/// Get the registry path without loading (for lock-first patterns)
+pub fn get_registry_path() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+    Ok(PluginRegistry::default_path()?)
+}

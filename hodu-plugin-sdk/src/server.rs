@@ -69,6 +69,28 @@ const MAX_STREAM_CHUNKS: usize = 10000;
 /// This prevents excessive memory usage in notification handling.
 const MAX_NOTIFICATION_MESSAGE_LEN: usize = 64 * 1024;
 
+/// Maximum response size (16MB)
+///
+/// Responses exceeding this limit will be rejected with an error.
+/// This prevents memory exhaustion from extremely large results.
+const MAX_RESPONSE_SIZE: usize = 16 * 1024 * 1024;
+
+/// Truncate a string to at most `max_bytes` bytes, respecting UTF-8 character boundaries.
+///
+/// Returns the original string if it's already within the limit.
+/// Never panics, even with multi-byte characters (emoji, CJK, etc.).
+fn truncate_utf8(s: &str, max_bytes: usize) -> &str {
+    if s.len() <= max_bytes {
+        return s;
+    }
+    // Find the last valid UTF-8 character boundary at or before max_bytes
+    let mut end = max_bytes;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
+}
+
 /// Reserved method name prefixes that plugins cannot register
 const RESERVED_PREFIXES: &[&str] = &["$/", "rpc.", "system."];
 
@@ -228,12 +250,8 @@ pub fn try_notify_progress(percent: Option<u8>, message: &str) -> Result<(), std
     use std::io::Write;
     // Clamp percent to 0-100
     let percent = percent.map(|p| p.min(100));
-    // Truncate message if too long
-    let message = if message.len() > MAX_NOTIFICATION_MESSAGE_LEN {
-        &message[..MAX_NOTIFICATION_MESSAGE_LEN]
-    } else {
-        message
-    };
+    // Truncate message if too long (UTF-8 safe)
+    let message = truncate_utf8(message, MAX_NOTIFICATION_MESSAGE_LEN);
     let notification = Notification::progress(percent, message);
     let json =
         serde_json::to_string(&notification).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
@@ -270,12 +288,8 @@ pub fn try_notify_log(level: &str, message: &str) -> Result<(), std::io::Error> 
     } else {
         "info"
     };
-    // Truncate message if too long
-    let message = if message.len() > MAX_NOTIFICATION_MESSAGE_LEN {
-        &message[..MAX_NOTIFICATION_MESSAGE_LEN]
-    } else {
-        message
-    };
+    // Truncate message if too long (UTF-8 safe)
+    let message = truncate_utf8(message, MAX_NOTIFICATION_MESSAGE_LEN);
     let notification = Notification::log(level, message);
     let json =
         serde_json::to_string(&notification).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
@@ -523,18 +537,26 @@ struct ActiveRequestGuard {
 
 impl Drop for ActiveRequestGuard {
     fn drop(&mut self) {
-        // Use try_lock to avoid blocking in drop
-        // If we can't get the lock, the cleanup will happen eventually when the server processes the next request
-        if let Ok(mut guard) = self.active_requests.try_lock() {
-            guard.remove(&self.id);
-        } else {
-            // Log skipped cleanup in debug builds for tracking potential resource leaks
-            #[cfg(debug_assertions)]
-            eprintln!(
-                "Warning: Skipped active_request cleanup for {:?} (lock contention)",
-                self.id
-            );
+        // Retry with exponential backoff to handle transient lock contention
+        // This prevents memory leaks when try_lock fails due to timing
+        const MAX_RETRIES: u32 = 5;
+        let mut retries = 0;
+
+        while retries < MAX_RETRIES {
+            if let Ok(mut guard) = self.active_requests.try_lock() {
+                guard.remove(&self.id);
+                return;
+            }
+            retries += 1;
+            // Brief yield to allow other tasks to release the lock
+            std::thread::yield_now();
         }
+
+        // Log warning in all builds since this could cause memory issues
+        eprintln!(
+            "Warning: Failed to cleanup active_request for {:?} after {} retries (potential memory leak)",
+            self.id, MAX_RETRIES
+        );
     }
 }
 
@@ -826,6 +848,16 @@ impl PluginServer {
     /// Can be used for logging, authentication, rate limiting, etc.
     /// Return `PreRequestAction::Reject(error)` to skip the handler.
     ///
+    /// # Hook Coverage
+    ///
+    /// This hook is called for all successfully parsed requests, **except**:
+    /// - Internal methods (`$/cancel`, `$/ping`)
+    /// - `initialize` and `shutdown` methods
+    /// - Requests that fail validation before parsing (e.g., too large, invalid JSON)
+    ///
+    /// For pre-parsing validation errors, the server returns an error response
+    /// directly without calling this hook, since no method information is available.
+    ///
     /// # Example
     ///
     /// ```ignore
@@ -1036,7 +1068,7 @@ impl PluginServer {
             // Check request size limit
             if line.len() > MAX_REQUEST_SIZE {
                 let resp = Response::error(
-                    RequestId::Number(0),
+                    RequestId::Null,
                     RpcError::invalid_request(format!(
                         "Request too large: {} bytes (max: {} bytes)",
                         line.len(),
@@ -1056,7 +1088,21 @@ impl PluginServer {
                 let responses = self.handle_batch(&line).await;
                 if !responses.is_empty() {
                     let json = serde_json::to_string(&responses)?;
-                    writeln!(stdout, "{}", json)?;
+                    if json.len() > MAX_RESPONSE_SIZE {
+                        eprintln!(
+                            "Warning: Batch response size {} bytes exceeds limit {} bytes, sending error",
+                            json.len(),
+                            MAX_RESPONSE_SIZE
+                        );
+                        let error_resp = Response::error(
+                            RequestId::Null,
+                            RpcError::new(error_codes::INTERNAL_ERROR, "Response too large"),
+                        );
+                        let error_json = serde_json::to_string(&[error_resp])?;
+                        writeln!(stdout, "{}", error_json)?;
+                    } else {
+                        writeln!(stdout, "{}", json)?;
+                    }
                     stdout.flush()?;
                 }
             } else {
@@ -1064,7 +1110,21 @@ impl PluginServer {
                 let response = self.handle_message(&line).await;
                 if let Some(resp) = response {
                     let json = serde_json::to_string(&resp)?;
-                    writeln!(stdout, "{}", json)?;
+                    if json.len() > MAX_RESPONSE_SIZE {
+                        eprintln!(
+                            "Warning: Response size {} bytes exceeds limit {} bytes, sending error",
+                            json.len(),
+                            MAX_RESPONSE_SIZE
+                        );
+                        let error_resp = Response::error(
+                            resp.id,
+                            RpcError::new(error_codes::INTERNAL_ERROR, "Response too large"),
+                        );
+                        let error_json = serde_json::to_string(&error_resp)?;
+                        writeln!(stdout, "{}", error_json)?;
+                    } else {
+                        writeln!(stdout, "{}", json)?;
+                    }
                     stdout.flush()?;
                 }
             }
@@ -1084,16 +1144,13 @@ impl PluginServer {
         let requests: Vec<serde_json::Value> = match serde_json::from_str(line) {
             Ok(reqs) => reqs,
             Err(e) => {
-                return vec![Response::error(
-                    RequestId::Number(0),
-                    RpcError::parse_error(e.to_string()),
-                )];
+                return vec![Response::error(RequestId::Null, RpcError::parse_error(e.to_string()))];
             },
         };
 
         if requests.is_empty() {
             return vec![Response::error(
-                RequestId::Number(0),
+                RequestId::Null,
                 RpcError::invalid_request("Empty batch"),
             )];
         }
@@ -1101,7 +1158,7 @@ impl PluginServer {
         // Check batch size limit to prevent DoS
         if requests.len() > MAX_BATCH_SIZE {
             return vec![Response::error(
-                RequestId::Number(0),
+                RequestId::Null,
                 RpcError::invalid_request(format!(
                     "Batch too large: {} requests (max: {})",
                     requests.len(),
@@ -1142,10 +1199,7 @@ impl PluginServer {
         let request: Request = match serde_json::from_value(value) {
             Ok(req) => req,
             Err(e) => {
-                return Some(Response::error(
-                    RequestId::Number(0),
-                    RpcError::parse_error(e.to_string()),
-                ));
+                return Some(Response::error(RequestId::Null, RpcError::parse_error(e.to_string())));
             },
         };
 
@@ -1162,10 +1216,7 @@ impl PluginServer {
         let request: Request = match serde_json::from_str(line) {
             Ok(req) => req,
             Err(e) => {
-                return Some(Response::error(
-                    RequestId::Number(0),
-                    RpcError::parse_error(e.to_string()),
-                ));
+                return Some(Response::error(RequestId::Null, RpcError::parse_error(e.to_string())));
             },
         };
 
@@ -1235,20 +1286,25 @@ impl PluginServer {
                 if !self.initialized {
                     Err(RpcError::new(error_codes::INVALID_REQUEST, "Server not initialized"))
                 } else if let Some(handler) = self.handlers.get(&method) {
+                    // Cache request ID clone (needed for context, active_requests, and guard)
+                    // We need 3 owned copies: context stores it, HashMap uses it as key, guard stores it
+                    let request_id = (*id).clone();
+
                     // Create context with cancellation token and shared state
                     let ctx = match &self.state {
-                        Some(state) => Context::with_state_dyn((*id).clone(), state.clone()),
-                        None => Context::new((*id).clone()),
+                        Some(state) => Context::with_state_dyn(request_id.clone(), state.clone()),
+                        None => Context::new(request_id.clone()),
                     };
                     let cancel_handle = CancellationHandle::new(&ctx);
 
                     // Register active request with RAII guard for cleanup
+                    // Note: active_requests Arc clone is cheap (ref count increment)
                     self.active_requests
                         .lock()
                         .await
-                        .insert((*id).clone(), cancel_handle.clone());
+                        .insert(request_id.clone(), cancel_handle.clone());
                     let _guard = ActiveRequestGuard {
-                        id: (*id).clone(),
+                        id: request_id,
                         active_requests: self.active_requests.clone(),
                     };
 

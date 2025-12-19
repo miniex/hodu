@@ -39,10 +39,12 @@ pub fn execute(args: InspectArgs) -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or("")
         .to_lowercase();
 
-    output::inspecting(&format!(
-        "{}",
-        args.file.file_name().unwrap_or_default().to_string_lossy()
-    ));
+    let display_name = args
+        .file
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| args.file.display().to_string());
+    output::inspecting(&display_name);
 
     match ext.as_str() {
         "hdss" => inspect_hdss(&args),

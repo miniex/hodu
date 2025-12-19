@@ -137,9 +137,11 @@ fn list_plugins() -> Result<(), Box<dyn std::error::Error>> {
     if backends.is_empty() {
         print_empty(use_color);
     } else {
+        // Pre-allocate tags buffer to avoid repeated allocations
+        let mut tags: Vec<&'static str> = Vec::with_capacity(2);
         for plugin in backends {
             let caps = &plugin.capabilities;
-            let mut tags = Vec::new();
+            tags.clear();
             if caps.runner.unwrap_or(false) {
                 tags.push("run");
             }
@@ -147,6 +149,7 @@ fn list_plugins() -> Result<(), Box<dyn std::error::Error>> {
                 tags.push("build");
             }
 
+            // Use pre-joined devices string from capabilities
             let devices = caps.devices.join(", ");
             print_plugin_row(
                 &plugin.name,
@@ -166,9 +169,12 @@ fn list_plugins() -> Result<(), Box<dyn std::error::Error>> {
     if model_formats.is_empty() {
         print_empty(use_color);
     } else {
+        // Reuse buffers across iterations
+        let mut tags: Vec<&'static str> = Vec::with_capacity(2);
+        let mut extensions_buf = String::with_capacity(64);
         for plugin in model_formats {
             let caps = &plugin.capabilities;
-            let mut tags = Vec::new();
+            tags.clear();
             if caps.load_model.unwrap_or(false) {
                 tags.push("load");
             }
@@ -176,17 +182,20 @@ fn list_plugins() -> Result<(), Box<dyn std::error::Error>> {
                 tags.push("save");
             }
 
-            let extensions = caps
-                .model_extensions
-                .iter()
-                .map(|e| format!(".{}", e))
-                .collect::<Vec<_>>()
-                .join(" ");
+            // Build extensions string in reusable buffer
+            extensions_buf.clear();
+            for (i, ext) in caps.model_extensions.iter().enumerate() {
+                if i > 0 {
+                    extensions_buf.push(' ');
+                }
+                extensions_buf.push('.');
+                extensions_buf.push_str(ext);
+            }
             print_plugin_row(
                 &plugin.name,
                 &plugin.version,
                 &tags,
-                Some(&extensions),
+                Some(&extensions_buf),
                 plugin.enabled,
                 use_color,
             );
@@ -200,9 +209,12 @@ fn list_plugins() -> Result<(), Box<dyn std::error::Error>> {
     if tensor_formats.is_empty() {
         print_empty(use_color);
     } else {
+        // Reuse buffers across iterations
+        let mut tags: Vec<&'static str> = Vec::with_capacity(2);
+        let mut extensions_buf = String::with_capacity(64);
         for plugin in tensor_formats {
             let caps = &plugin.capabilities;
-            let mut tags = Vec::new();
+            tags.clear();
             if caps.load_tensor.unwrap_or(false) {
                 tags.push("load");
             }
@@ -210,17 +222,20 @@ fn list_plugins() -> Result<(), Box<dyn std::error::Error>> {
                 tags.push("save");
             }
 
-            let extensions = caps
-                .tensor_extensions
-                .iter()
-                .map(|e| format!(".{}", e))
-                .collect::<Vec<_>>()
-                .join(" ");
+            // Build extensions string in reusable buffer
+            extensions_buf.clear();
+            for (i, ext) in caps.tensor_extensions.iter().enumerate() {
+                if i > 0 {
+                    extensions_buf.push(' ');
+                }
+                extensions_buf.push('.');
+                extensions_buf.push_str(ext);
+            }
             print_plugin_row(
                 &plugin.name,
                 &plugin.version,
                 &tags,
-                Some(&extensions),
+                Some(&extensions_buf),
                 plugin.enabled,
                 use_color,
             );
@@ -489,7 +504,14 @@ fn do_install(args: InstallArgs) -> Result<(), Box<dyn std::error::Error>> {
         };
         install_from_path(path, args.debug, args.force, args.verbose, source)
     } else if let Some(git) = &args.git {
-        install_from_git(git, args.subdir.as_deref(), args.tag.as_deref(), args.debug, args.force, args.verbose)
+        install_from_git(
+            git,
+            args.subdir.as_deref(),
+            args.tag.as_deref(),
+            args.debug,
+            args.force,
+            args.verbose,
+        )
     } else if let Some(name) = &args.name {
         install_from_registry(name, args.tag.as_deref(), args.debug, args.force, args.verbose)
     } else {
@@ -500,31 +522,30 @@ fn do_install(args: InstallArgs) -> Result<(), Box<dyn std::error::Error>> {
 fn remove_plugin(args: RemoveArgs) -> Result<(), Box<dyn std::error::Error>> {
     let (mut registry, registry_path) = load_registry_mut()?;
 
-    // Resolve plugin name (try various name formats without recursion)
-    let resolved_name = if registry.find(&args.name).is_some() {
-        args.name.clone()
-    } else {
-        let backend_name = backend_plugin_name(&args.name);
-        let format_name = format_plugin_name(&args.name);
-
-        if registry.find(&backend_name).is_some() {
-            backend_name
-        } else if registry.find(&format_name).is_some() {
-            format_name
+    // Resolve plugin name and get plugin info in one lookup to avoid TOCTOU
+    let (name, version) = {
+        // Try exact name first
+        if let Some(plugin) = registry.find(&args.name) {
+            (plugin.name.clone(), plugin.version.clone())
         } else {
-            return Err(format!(
-                "Plugin '{}' not found.\n\nInstalled plugins:\n{}",
-                args.name,
-                list_installed_plugins(&registry)
-            )
-            .into());
+            // Try with prefixes
+            let backend_name = backend_plugin_name(&args.name);
+            let format_name = format_plugin_name(&args.name);
+
+            if let Some(plugin) = registry.find(&backend_name) {
+                (plugin.name.clone(), plugin.version.clone())
+            } else if let Some(plugin) = registry.find(&format_name) {
+                (plugin.name.clone(), plugin.version.clone())
+            } else {
+                return Err(format!(
+                    "Plugin '{}' not found.\n\nInstalled plugins:\n{}",
+                    args.name,
+                    list_installed_plugins(&registry)
+                )
+                .into());
+            }
         }
     };
-
-    let plugin = registry.find(&resolved_name).unwrap(); // Safe: we just verified it exists
-
-    let name = plugin.name.clone();
-    let version = plugin.version.clone();
 
     // Delete the plugin directory
     let plugins_dir = get_plugins_dir()?;

@@ -81,7 +81,7 @@ impl Context {
         self.state.as_ref().and_then(|s| match s.clone().downcast::<S>() {
             Ok(state) => Some(state),
             Err(_) => {
-                #[cfg(debug_assertions)]
+                // Log in all builds - this indicates a programming error
                 eprintln!(
                     "Warning: State downcast failed for type '{}' (request_id: {:?})",
                     std::any::type_name::<S>(),

@@ -17,7 +17,9 @@ use tempfile::NamedTempFile;
 fn validate_file_magic(path: &Path, extension: &str) -> Result<(), String> {
     let mut file = File::open(path).map_err(|e| format!("Failed to open file: {}", e))?;
     let mut magic = [0u8; 8];
-    let bytes_read = file.read(&mut magic).map_err(|e| format!("Failed to read file: {}", e))?;
+    let bytes_read = file
+        .read(&mut magic)
+        .map_err(|e| format!("Failed to read file: {}", e))?;
 
     let valid = match extension {
         // HDT tensor format - starts with "HDT\x00" (Hodu Tensor)
@@ -27,9 +29,7 @@ fn validate_file_magic(path: &Path, extension: &str) -> Result<(), String> {
         // JSON - starts with whitespace or '{' or '['
         "json" => {
             bytes_read > 0 && {
-                let first_non_ws = magic[..bytes_read]
-                    .iter()
-                    .find(|&&b| !b.is_ascii_whitespace());
+                let first_non_ws = magic[..bytes_read].iter().find(|&&b| !b.is_ascii_whitespace());
                 matches!(first_non_ws, Some(b'{') | Some(b'['))
             }
         },

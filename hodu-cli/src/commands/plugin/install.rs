@@ -2,8 +2,8 @@
 
 use crate::output;
 use crate::plugins::{
-    detect_plugin_type, load_registry_mut, DetectedPluginType, PluginCapabilities, PluginEntry, PluginSource,
-    PluginType,
+    detect_plugin_type, get_registry_path, DetectedPluginType, PluginCapabilities, PluginEntry, PluginRegistry,
+    PluginSource, PluginType,
 };
 use fs2::FileExt;
 use hodu_plugin::PLUGIN_VERSION;
@@ -191,7 +191,14 @@ pub fn install_from_registry(
         compatible_versions.first().map(|v| v.tag.clone())
     };
 
-    install_from_git(&plugin.git, plugin.path.as_deref(), tag.as_deref(), debug, force, verbose)
+    install_from_git(
+        &plugin.git,
+        plugin.path.as_deref(),
+        tag.as_deref(),
+        debug,
+        force,
+        verbose,
+    )
 }
 
 /// Validate git URL format
@@ -482,8 +489,8 @@ pub fn install_from_path(
         }
     }
 
-    // Load registry with file locking to prevent concurrent modifications
-    let (mut registry, registry_path) = load_registry_mut()?;
+    // Acquire lock BEFORE loading registry to prevent race conditions
+    let registry_path = get_registry_path()?;
     let lock_path = registry_path.with_extension("lock");
     let lock_file = File::create(&lock_path).map_err(|e| format!("Failed to create lock file: {}", e))?;
     lock_file
@@ -491,6 +498,8 @@ pub fn install_from_path(
         .map_err(|e| format!("Failed to acquire lock (another installation in progress?): {}", e))?;
     // RAII guard ensures lock file is cleaned up on function exit (success or failure)
     let _lock_guard = LockFileGuard::new(lock_path, lock_file);
+    // Now load registry while holding the lock
+    let mut registry = PluginRegistry::load(&registry_path)?;
 
     // Check if already installed
     if let Some(existing) = registry.find(&name) {

@@ -219,7 +219,9 @@ pub fn execute(args: RunArgs) -> Result<(), Box<dyn std::error::Error>> {
         if let Err(e) = ctrlc::set_handler(move || {
             cancelled_clone.store(true, Ordering::SeqCst);
             eprintln!("\nCancelling...");
-            let _ = handle.cancel();
+            if let Err(cancel_err) = handle.cancel() {
+                eprintln!("Warning: Failed to send cancellation: {}", cancel_err);
+            }
         }) {
             output::warning(&format!(
                 "Failed to set Ctrl+C handler: {}. Cancellation may not work.",
@@ -461,6 +463,25 @@ fn expand_path(path: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
 }
 
 fn parse_device(device_str: &str) -> Result<Device, Box<dyn std::error::Error>> {
+    // Validate device string doesn't contain dangerous characters
+    if device_str.is_empty() {
+        return Err("Device string cannot be empty".into());
+    }
+    if device_str.len() > 64 {
+        return Err(format!("Device string too long: {} chars (max 64)", device_str.len()).into());
+    }
+    // Only allow alphanumeric, underscore, colon, and hyphen
+    if !device_str
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '_' || c == ':' || c == '-')
+    {
+        return Err(format!(
+            "Device string contains invalid characters: '{}'. Only alphanumeric, '_', ':', '-' allowed",
+            device_str
+        )
+        .into());
+    }
+
     // Normalize to lowercase with :: separator for device index
     let device = device_str.to_lowercase();
 

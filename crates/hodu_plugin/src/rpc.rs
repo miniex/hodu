@@ -41,6 +41,40 @@ pub const MAX_ERROR_STRING_LEN: usize = 64 * 1024;
 /// Reserved field names in error data
 const RESERVED_ERROR_FIELDS: &[&str] = &["cause", "hints", "details", "context", "original_data"];
 
+/// Maximum metadata description length (1KB)
+pub const MAX_METADATA_DESCRIPTION_LEN: usize = 1024;
+
+/// Maximum metadata author length (256 bytes)
+pub const MAX_METADATA_AUTHOR_LEN: usize = 256;
+
+/// Maximum metadata URL length (2KB for homepage/repository)
+pub const MAX_METADATA_URL_LEN: usize = 2048;
+
+/// Maximum metadata license length (64 bytes)
+pub const MAX_METADATA_LICENSE_LEN: usize = 64;
+
+/// Maximum metadata version length (64 bytes)
+pub const MAX_METADATA_VERSION_LEN: usize = 64;
+
+/// Maximum target triple length (128 bytes)
+pub const MAX_TARGET_TRIPLE_LEN: usize = 128;
+
+/// Truncate a string to at most `max_bytes` bytes, respecting UTF-8 character boundaries.
+///
+/// Returns a new String if truncation is needed, or the original String if within limit.
+/// Never panics, even with multi-byte characters (emoji, CJK, etc.).
+fn truncate_utf8_owned(s: String, max_bytes: usize) -> String {
+    if s.len() <= max_bytes {
+        return s;
+    }
+    // Find the last valid UTF-8 character boundary at or before max_bytes
+    let mut end = max_bytes;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    s[..end].to_string()
+}
+
 /// Error type for parameter validation
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValidationError {
@@ -90,6 +124,36 @@ fn validate_path(path: &str, field: &str) -> Result<(), ValidationError> {
         return Err(ValidationError {
             field: field.to_string(),
             message: "path contains traversal sequence (..)".to_string(),
+        });
+    }
+    // Check for URL-encoded path traversal (%2e = '.', case insensitive)
+    // This catches %2e%2e, %2E%2E, and mixed case variants
+    let lower = path.to_lowercase();
+    if lower.contains("%2e") {
+        return Err(ValidationError {
+            field: field.to_string(),
+            message: "path contains URL-encoded characters (%2e)".to_string(),
+        });
+    }
+    // Check for double URL-encoding (%25 = '%')
+    if lower.contains("%25") {
+        return Err(ValidationError {
+            field: field.to_string(),
+            message: "path contains double-encoded characters (%25)".to_string(),
+        });
+    }
+    // Check for backslash encoding (%5c = '\')
+    if lower.contains("%5c") {
+        return Err(ValidationError {
+            field: field.to_string(),
+            message: "path contains encoded backslash (%5c)".to_string(),
+        });
+    }
+    // Check for forward slash encoding (%2f = '/')
+    if lower.contains("%2f") {
+        return Err(ValidationError {
+            field: field.to_string(),
+            message: "path contains encoded forward slash (%2f)".to_string(),
         });
     }
     // Check for home directory expansion (could escape intended directories)
@@ -180,17 +244,77 @@ pub struct Notification {
     pub params: Option<serde_json::Value>,
 }
 
-/// Request ID (can be number or string)
+/// Request ID (can be number, string, or null)
 ///
 /// Per JSON-RPC 2.0 spec, IDs can be numbers, strings, or null.
-/// We don't support null IDs as they indicate notifications.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-#[serde(untagged)]
+/// Null is used in error responses when the request ID cannot be determined
+/// (e.g., parse errors, invalid JSON).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum RequestId {
     /// Numeric request ID
     Number(i64),
     /// String request ID
     String(String),
+    /// Null ID (used for parse errors per JSON-RPC 2.0 spec)
+    Null,
+}
+
+impl serde::Serialize for RequestId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            RequestId::Number(n) => serializer.serialize_i64(*n),
+            RequestId::String(s) => serializer.serialize_str(s),
+            RequestId::Null => serializer.serialize_none(),
+        }
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for RequestId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de::{self, Visitor};
+
+        struct RequestIdVisitor;
+
+        impl<'de> Visitor<'de> for RequestIdVisitor {
+            type Value = RequestId;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a number, string, or null")
+            }
+
+            fn visit_i64<E: de::Error>(self, v: i64) -> Result<RequestId, E> {
+                Ok(RequestId::Number(v))
+            }
+
+            fn visit_u64<E: de::Error>(self, v: u64) -> Result<RequestId, E> {
+                Ok(RequestId::Number(v as i64))
+            }
+
+            fn visit_str<E: de::Error>(self, v: &str) -> Result<RequestId, E> {
+                Ok(RequestId::String(v.to_string()))
+            }
+
+            fn visit_string<E: de::Error>(self, v: String) -> Result<RequestId, E> {
+                Ok(RequestId::String(v))
+            }
+
+            fn visit_none<E: de::Error>(self) -> Result<RequestId, E> {
+                Ok(RequestId::Null)
+            }
+
+            fn visit_unit<E: de::Error>(self) -> Result<RequestId, E> {
+                Ok(RequestId::Null)
+            }
+        }
+
+        deserializer.deserialize_any(RequestIdVisitor)
+    }
 }
 
 /// JSON-RPC error object
@@ -287,16 +411,51 @@ pub mod methods {
 /// Initialize request params
 ///
 /// Sent by CLI to initialize the plugin and exchange version information.
+///
+/// # Version Format
+///
+/// Both version fields follow [Semantic Versioning](https://semver.org/) format: `MAJOR.MINOR.PATCH`
+///
+/// - `plugin_version`: The CLI's plugin SDK version (e.g., "0.1.0")
+/// - `protocol_version`: The JSON-RPC protocol version, currently "1.0.0"
+///
+/// ## Compatibility Rules
+///
+/// - Plugins should check `protocol_version` matches their expected version
+/// - Major version changes indicate breaking changes
+/// - Minor version changes are backward compatible
+/// - Patch version changes are bug fixes only
+///
+/// # Example
+///
+/// ```ignore
+/// let params = InitializeParams {
+///     plugin_version: "0.1.0".to_string(),
+///     protocol_version: "1.0.0".to_string(),
+/// };
+/// assert!(params.validate().is_ok());
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InitializeParams {
-    /// CLI's plugin protocol version
+    /// CLI's plugin SDK version (semver format: "MAJOR.MINOR.PATCH")
+    ///
+    /// Used for compatibility checking. Plugins can use this to enable/disable
+    /// features based on the CLI version.
     pub plugin_version: String,
-    /// JSON-RPC protocol version (should be "1.0.0")
+    /// JSON-RPC protocol version (semver format, currently "1.0.0")
+    ///
+    /// Plugins should verify this matches their expected protocol version.
+    /// Protocol version changes indicate changes to the RPC message format.
     pub protocol_version: String,
 }
 
 impl InitializeParams {
     /// Validate the parameters
+    ///
+    /// Checks that version strings are non-empty. Note that this does not
+    /// validate the semver format - it only ensures the fields are present.
+    /// Callers should perform additional validation if strict semver
+    /// compliance is required.
     pub fn validate(&self) -> Result<(), ValidationError> {
         validate_non_empty(&self.plugin_version, "plugin_version")?;
         validate_non_empty(&self.protocol_version, "protocol_version")
@@ -329,6 +488,143 @@ pub struct PluginMetadataRpc {
     /// Minimum required hodu version (semver, e.g., "0.1.0")
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_hodu_version: Option<String>,
+}
+
+impl PluginMetadataRpc {
+    /// Validate metadata field lengths
+    ///
+    /// Returns `Ok(())` if all fields are within limits, or
+    /// `Err(ValidationError)` with details about which limit was exceeded.
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        if let Some(ref desc) = self.description {
+            if desc.len() > MAX_METADATA_DESCRIPTION_LEN {
+                return Err(ValidationError {
+                    field: "description".to_string(),
+                    message: format!(
+                        "description exceeds {} bytes (got {})",
+                        MAX_METADATA_DESCRIPTION_LEN,
+                        desc.len()
+                    ),
+                });
+            }
+        }
+        if let Some(ref author) = self.author {
+            if author.len() > MAX_METADATA_AUTHOR_LEN {
+                return Err(ValidationError {
+                    field: "author".to_string(),
+                    message: format!(
+                        "author exceeds {} bytes (got {})",
+                        MAX_METADATA_AUTHOR_LEN,
+                        author.len()
+                    ),
+                });
+            }
+        }
+        if let Some(ref homepage) = self.homepage {
+            if homepage.len() > MAX_METADATA_URL_LEN {
+                return Err(ValidationError {
+                    field: "homepage".to_string(),
+                    message: format!(
+                        "homepage URL exceeds {} bytes (got {})",
+                        MAX_METADATA_URL_LEN,
+                        homepage.len()
+                    ),
+                });
+            }
+        }
+        if let Some(ref license) = self.license {
+            if license.len() > MAX_METADATA_LICENSE_LEN {
+                return Err(ValidationError {
+                    field: "license".to_string(),
+                    message: format!(
+                        "license exceeds {} bytes (got {})",
+                        MAX_METADATA_LICENSE_LEN,
+                        license.len()
+                    ),
+                });
+            }
+        }
+        if let Some(ref repository) = self.repository {
+            if repository.len() > MAX_METADATA_URL_LEN {
+                return Err(ValidationError {
+                    field: "repository".to_string(),
+                    message: format!(
+                        "repository URL exceeds {} bytes (got {})",
+                        MAX_METADATA_URL_LEN,
+                        repository.len()
+                    ),
+                });
+            }
+        }
+        if let Some(ref targets) = self.supported_targets {
+            if targets.len() > MAX_SUPPORTED_TARGETS {
+                return Err(ValidationError {
+                    field: "supported_targets".to_string(),
+                    message: format!(
+                        "supported_targets exceeds {} items (got {})",
+                        MAX_SUPPORTED_TARGETS,
+                        targets.len()
+                    ),
+                });
+            }
+            for (i, target) in targets.iter().enumerate() {
+                if target.len() > MAX_TARGET_TRIPLE_LEN {
+                    return Err(ValidationError {
+                        field: format!("supported_targets[{}]", i),
+                        message: format!(
+                            "target triple exceeds {} bytes (got {})",
+                            MAX_TARGET_TRIPLE_LEN,
+                            target.len()
+                        ),
+                    });
+                }
+            }
+        }
+        if let Some(ref version) = self.min_hodu_version {
+            if version.len() > MAX_METADATA_VERSION_LEN {
+                return Err(ValidationError {
+                    field: "min_hodu_version".to_string(),
+                    message: format!(
+                        "min_hodu_version exceeds {} bytes (got {})",
+                        MAX_METADATA_VERSION_LEN,
+                        version.len()
+                    ),
+                });
+            }
+        }
+        Ok(())
+    }
+
+    /// Sanitize metadata by truncating fields to their maximum lengths
+    ///
+    /// This is a lenient alternative to validation that ensures all fields
+    /// are within limits by truncating them if necessary.
+    pub fn sanitize(&mut self) {
+        if let Some(ref mut desc) = self.description {
+            *desc = truncate_utf8_owned(std::mem::take(desc), MAX_METADATA_DESCRIPTION_LEN);
+        }
+        if let Some(ref mut author) = self.author {
+            *author = truncate_utf8_owned(std::mem::take(author), MAX_METADATA_AUTHOR_LEN);
+        }
+        if let Some(ref mut homepage) = self.homepage {
+            *homepage = truncate_utf8_owned(std::mem::take(homepage), MAX_METADATA_URL_LEN);
+        }
+        if let Some(ref mut license) = self.license {
+            *license = truncate_utf8_owned(std::mem::take(license), MAX_METADATA_LICENSE_LEN);
+        }
+        if let Some(ref mut repository) = self.repository {
+            *repository = truncate_utf8_owned(std::mem::take(repository), MAX_METADATA_URL_LEN);
+        }
+        if let Some(ref mut targets) = self.supported_targets {
+            targets.truncate(MAX_SUPPORTED_TARGETS);
+            for target in targets.iter_mut() {
+                *target = truncate_utf8_owned(std::mem::take(target), MAX_TARGET_TRIPLE_LEN);
+            }
+        }
+        if let Some(ref mut version) = self.min_hodu_version {
+            *version = truncate_utf8_owned(std::mem::take(version), MAX_METADATA_VERSION_LEN);
+        }
+    }
 }
 
 /// Initialize response result
@@ -409,18 +705,11 @@ impl InitializeResult {
             }
         }
         if let Some(ref meta) = self.metadata {
-            if let Some(ref targets) = meta.supported_targets {
-                if targets.len() > MAX_SUPPORTED_TARGETS {
-                    return Err(ValidationError {
-                        field: "metadata.supported_targets".to_string(),
-                        message: format!(
-                            "too many supported targets ({} > {})",
-                            targets.len(),
-                            MAX_SUPPORTED_TARGETS
-                        ),
-                    });
-                }
-            }
+            // Validate all metadata fields including string lengths
+            meta.validate().map_err(|e| ValidationError {
+                field: format!("metadata.{}", e.field),
+                message: e.message,
+            })?;
         }
         Ok(())
     }
@@ -1114,13 +1403,8 @@ impl RpcError {
     ///     .with_cause("IO error: file not found");
     /// ```
     pub fn with_cause(mut self, cause: impl Into<String>) -> Self {
-        let cause_str = cause.into();
-        // Truncate overly long cause strings
-        let cause_str = if cause_str.len() > MAX_ERROR_STRING_LEN {
-            cause_str[..MAX_ERROR_STRING_LEN].to_string()
-        } else {
-            cause_str
-        };
+        // Truncate overly long cause strings (UTF-8 safe)
+        let cause_str = truncate_utf8_owned(cause.into(), MAX_ERROR_STRING_LEN);
         self.data = Some(match self.data {
             Some(mut data) => {
                 if let Some(obj) = data.as_object_mut() {
@@ -1131,13 +1415,9 @@ impl RpcError {
                             serde_json::Value::String(s) => s.clone(),
                             other => other.to_string(),
                         };
-                        // Truncate combined cause if too long
+                        // Truncate combined cause if too long (UTF-8 safe)
                         let combined = format!("{} <- {}", cause_str, existing_str);
-                        let combined = if combined.len() > MAX_ERROR_STRING_LEN {
-                            combined[..MAX_ERROR_STRING_LEN].to_string()
-                        } else {
-                            combined
-                        };
+                        let combined = truncate_utf8_owned(combined, MAX_ERROR_STRING_LEN);
                         obj.insert("cause".to_string(), serde_json::json!(combined));
                     } else {
                         obj.insert("cause".to_string(), serde_json::json!(cause_str));
@@ -1186,13 +1466,8 @@ impl RpcError {
     ///     .with_hint("Ensure the file exists and is readable");
     /// ```
     pub fn with_hint(mut self, hint: impl Into<String>) -> Self {
-        let hint_str = hint.into();
-        // Truncate overly long hints
-        let hint_str = if hint_str.len() > MAX_ERROR_STRING_LEN {
-            hint_str[..MAX_ERROR_STRING_LEN].to_string()
-        } else {
-            hint_str
-        };
+        // Truncate overly long hints (UTF-8 safe)
+        let hint_str = truncate_utf8_owned(hint.into(), MAX_ERROR_STRING_LEN);
         self.data = Some(match self.data {
             Some(mut data) => {
                 if let Some(obj) = data.as_object_mut() {
@@ -1202,12 +1477,13 @@ impl RpcError {
                             if arr.len() < MAX_HINTS {
                                 arr.push(serde_json::json!(hint_str));
                             } else {
-                                #[cfg(debug_assertions)]
+                                // Log warning in both debug and release builds
                                 eprintln!(
                                     "Warning: Maximum hints ({}) reached, hint dropped: {}",
                                     MAX_HINTS,
                                     if hint_str.len() > 50 {
-                                        format!("{}...", &hint_str[..50])
+                                        // UTF-8 safe truncation for preview
+                                        format!("{}...", truncate_utf8_owned(hint_str.clone(), 50))
                                     } else {
                                         hint_str.clone()
                                     }
@@ -1259,8 +1535,8 @@ impl RpcError {
     pub fn with_field(mut self, key: impl Into<String>, value: serde_json::Value) -> Self {
         let key = key.into();
         // Warn if using reserved field names (they might be overwritten by other methods)
+        // Log in all builds since this indicates a programming error
         if RESERVED_ERROR_FIELDS.contains(&key.as_str()) {
-            #[cfg(debug_assertions)]
             eprintln!(
                 "Warning: with_field() using reserved field name '{}', may be overwritten",
                 key
@@ -1488,5 +1764,257 @@ mod tests {
             response.validate().unwrap_err(),
             ResponseValidationError::NeitherResultNorError
         );
+    }
+
+    // =========================================================================
+    // Param Validation Tests
+    // =========================================================================
+
+    #[test]
+    fn test_load_model_params_validate() {
+        // Valid path
+        let params = LoadModelParams {
+            path: "/path/to/model.onnx".to_string(),
+        };
+        assert!(params.validate().is_ok());
+
+        // Empty path
+        let params = LoadModelParams { path: "".to_string() };
+        assert!(params.validate().is_err());
+
+        // Path traversal
+        let params = LoadModelParams {
+            path: "/path/../etc/passwd".to_string(),
+        };
+        assert!(params.validate().is_err());
+
+        // URL encoded traversal
+        let params = LoadModelParams {
+            path: "/path/%2e%2e/etc/passwd".to_string(),
+        };
+        assert!(params.validate().is_err());
+    }
+
+    #[test]
+    fn test_save_model_params_validate() {
+        // Valid paths
+        let params = SaveModelParams {
+            snapshot_path: "/path/to/snapshot.hdss".to_string(),
+            output_path: "/output/model.onnx".to_string(),
+        };
+        assert!(params.validate().is_ok());
+
+        // Empty snapshot path
+        let params = SaveModelParams {
+            snapshot_path: "".to_string(),
+            output_path: "/output/model.onnx".to_string(),
+        };
+        assert!(params.validate().is_err());
+
+        // Empty output path
+        let params = SaveModelParams {
+            snapshot_path: "/path/to/snapshot.hdss".to_string(),
+            output_path: "".to_string(),
+        };
+        assert!(params.validate().is_err());
+    }
+
+    #[test]
+    fn test_run_params_validate() {
+        // Valid params
+        let params = RunParams {
+            library_path: "/path/to/lib.dylib".to_string(),
+            snapshot_path: "/path/to/snapshot.hdss".to_string(),
+            device: "cpu".to_string(),
+            inputs: vec![],
+        };
+        assert!(params.validate().is_ok());
+
+        // Empty device
+        let params = RunParams {
+            library_path: "/path/to/lib.dylib".to_string(),
+            snapshot_path: "/path/to/snapshot.hdss".to_string(),
+            device: "".to_string(),
+            inputs: vec![],
+        };
+        assert!(params.validate().is_err());
+
+        // Too many inputs
+        let params = RunParams {
+            library_path: "/path/to/lib.dylib".to_string(),
+            snapshot_path: "/path/to/snapshot.hdss".to_string(),
+            device: "cpu".to_string(),
+            inputs: (0..MAX_INPUTS + 1)
+                .map(|i| TensorInput {
+                    name: format!("input{}", i),
+                    path: format!("/path/to/input{}.hdt", i),
+                })
+                .collect(),
+        };
+        assert!(params.validate().is_err());
+    }
+
+    #[test]
+    fn test_build_params_validate() {
+        // Valid params
+        let params = BuildParams {
+            snapshot_path: "/path/to/snapshot.hdss".to_string(),
+            target: "x86_64-apple-darwin".to_string(),
+            device: "cpu".to_string(),
+            format: "sharedlib".to_string(),
+            output_path: "/output/model.dylib".to_string(),
+        };
+        assert!(params.validate().is_ok());
+
+        // Empty target
+        let params = BuildParams {
+            snapshot_path: "/path/to/snapshot.hdss".to_string(),
+            target: "".to_string(),
+            device: "cpu".to_string(),
+            format: "sharedlib".to_string(),
+            output_path: "/output/model.dylib".to_string(),
+        };
+        assert!(params.validate().is_err());
+
+        // Empty format
+        let params = BuildParams {
+            snapshot_path: "/path/to/snapshot.hdss".to_string(),
+            target: "x86_64-apple-darwin".to_string(),
+            device: "cpu".to_string(),
+            format: "".to_string(),
+            output_path: "/output/model.dylib".to_string(),
+        };
+        assert!(params.validate().is_err());
+    }
+
+    #[test]
+    fn test_tensor_input_validate() {
+        // Valid input
+        let input = TensorInput {
+            name: "input0".to_string(),
+            path: "/path/to/tensor.hdt".to_string(),
+        };
+        assert!(input.validate().is_ok());
+
+        // Empty name
+        let input = TensorInput {
+            name: "".to_string(),
+            path: "/path/to/tensor.hdt".to_string(),
+        };
+        assert!(input.validate().is_err());
+
+        // Name with path separator
+        let input = TensorInput {
+            name: "input/0".to_string(),
+            path: "/path/to/tensor.hdt".to_string(),
+        };
+        assert!(input.validate().is_err());
+
+        // Empty path
+        let input = TensorInput {
+            name: "input0".to_string(),
+            path: "".to_string(),
+        };
+        assert!(input.validate().is_err());
+    }
+
+    #[test]
+    fn test_tensor_output_validate() {
+        // Valid output
+        let output = TensorOutput {
+            name: "output0".to_string(),
+            path: "/path/to/output.hdt".to_string(),
+        };
+        assert!(output.validate().is_ok());
+
+        // Empty name
+        let output = TensorOutput {
+            name: "".to_string(),
+            path: "/path/to/output.hdt".to_string(),
+        };
+        assert!(output.validate().is_err());
+
+        // Name with path separator
+        let output = TensorOutput {
+            name: "output\\0".to_string(),
+            path: "/path/to/output.hdt".to_string(),
+        };
+        assert!(output.validate().is_err());
+    }
+
+    #[test]
+    fn test_initialize_params_validate() {
+        // Valid params
+        let params = InitializeParams {
+            plugin_version: "1.0.0".to_string(),
+            protocol_version: "1.0.0".to_string(),
+        };
+        assert!(params.validate().is_ok());
+
+        // Empty plugin version
+        let params = InitializeParams {
+            plugin_version: "".to_string(),
+            protocol_version: "1.0.0".to_string(),
+        };
+        assert!(params.validate().is_err());
+
+        // Empty protocol version
+        let params = InitializeParams {
+            plugin_version: "1.0.0".to_string(),
+            protocol_version: "".to_string(),
+        };
+        assert!(params.validate().is_err());
+    }
+
+    #[test]
+    fn test_plugin_metadata_validate() {
+        // Valid metadata
+        let metadata = PluginMetadataRpc {
+            description: Some("A test plugin".to_string()),
+            author: Some("Test Author".to_string()),
+            homepage: Some("https://example.com".to_string()),
+            license: Some("MIT".to_string()),
+            repository: Some("https://github.com/test/repo".to_string()),
+            supported_targets: Some(vec!["x86_64-*-*".to_string()]),
+            min_hodu_version: Some("0.1.0".to_string()),
+        };
+        assert!(metadata.validate().is_ok());
+
+        // Description too long
+        let metadata = PluginMetadataRpc {
+            description: Some("x".repeat(MAX_METADATA_DESCRIPTION_LEN + 1)),
+            ..Default::default()
+        };
+        assert!(metadata.validate().is_err());
+
+        // Author too long
+        let metadata = PluginMetadataRpc {
+            author: Some("x".repeat(MAX_METADATA_AUTHOR_LEN + 1)),
+            ..Default::default()
+        };
+        assert!(metadata.validate().is_err());
+
+        // Too many targets
+        let metadata = PluginMetadataRpc {
+            supported_targets: Some((0..MAX_SUPPORTED_TARGETS + 1).map(|i| format!("target{}", i)).collect()),
+            ..Default::default()
+        };
+        assert!(metadata.validate().is_err());
+    }
+
+    #[test]
+    fn test_plugin_metadata_sanitize() {
+        let mut metadata = PluginMetadataRpc {
+            description: Some("x".repeat(MAX_METADATA_DESCRIPTION_LEN + 100)),
+            author: Some("x".repeat(MAX_METADATA_AUTHOR_LEN + 100)),
+            license: Some("x".repeat(MAX_METADATA_LICENSE_LEN + 100)),
+            ..Default::default()
+        };
+
+        metadata.sanitize();
+
+        assert!(metadata.description.as_ref().unwrap().len() <= MAX_METADATA_DESCRIPTION_LEN);
+        assert!(metadata.author.as_ref().unwrap().len() <= MAX_METADATA_AUTHOR_LEN);
+        assert!(metadata.license.as_ref().unwrap().len() <= MAX_METADATA_LICENSE_LEN);
     }
 }
