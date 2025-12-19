@@ -113,6 +113,9 @@ impl PluginDType {
     }
 }
 
+/// Maximum length for dtype string in error messages
+const MAX_DTYPE_ERROR_LEN: usize = 64;
+
 /// Error type for PluginDType parsing
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseDTypeError {
@@ -121,7 +124,19 @@ pub struct ParseDTypeError {
 
 impl ParseDTypeError {
     fn new(dtype: impl Into<String>) -> Self {
-        Self { dtype: dtype.into() }
+        let dtype = dtype.into();
+        // Truncate overly long dtype strings to prevent memory issues (UTF-8 safe)
+        let dtype = if dtype.len() > MAX_DTYPE_ERROR_LEN {
+            // Find a valid UTF-8 boundary for truncation
+            let mut end = MAX_DTYPE_ERROR_LEN;
+            while end > 0 && !dtype.is_char_boundary(end) {
+                end -= 1;
+            }
+            format!("{}...", &dtype[..end])
+        } else {
+            dtype
+        };
+        Self { dtype }
     }
 }
 

@@ -75,13 +75,80 @@ fn truncate_utf8_owned(s: String, max_bytes: usize) -> String {
     s[..end].to_string()
 }
 
+/// Validation error codes for programmatic error handling
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ValidationErrorCode {
+    /// Field is empty when non-empty value is required
+    Empty,
+    /// Field contains invalid characters
+    InvalidChars,
+    /// Field exceeds maximum length
+    TooLong,
+    /// Path contains traversal sequences (..)
+    PathTraversal,
+    /// Path contains encoded characters (%2e, %5c, etc.)
+    EncodedPath,
+    /// Path contains home directory expansion (~)
+    HomeExpansion,
+    /// Array or collection exceeds size limit
+    TooManyItems,
+    /// Value is out of valid range
+    OutOfRange,
+    /// General validation error
+    #[default]
+    Other,
+}
+
 /// Error type for parameter validation
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValidationError {
+    /// Error code for programmatic handling
+    pub code: ValidationErrorCode,
     /// Field that failed validation
     pub field: String,
     /// Description of the validation failure
     pub message: String,
+}
+
+impl ValidationError {
+    /// Create a new validation error with the given code
+    pub fn new(code: ValidationErrorCode, field: impl Into<String>, message: impl Into<String>) -> Self {
+        Self {
+            code,
+            field: field.into(),
+            message: message.into(),
+        }
+    }
+
+    /// Create an "empty" validation error
+    pub fn empty(field: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::new(ValidationErrorCode::Empty, field, message)
+    }
+
+    /// Create an "invalid characters" validation error
+    pub fn invalid_chars(field: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::new(ValidationErrorCode::InvalidChars, field, message)
+    }
+
+    /// Create a "too long" validation error
+    pub fn too_long(field: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::new(ValidationErrorCode::TooLong, field, message)
+    }
+
+    /// Create a "too many items" validation error
+    pub fn too_many_items(field: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::new(ValidationErrorCode::TooManyItems, field, message)
+    }
+
+    /// Create an "out of range" validation error
+    pub fn out_of_range(field: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::new(ValidationErrorCode::OutOfRange, field, message)
+    }
+
+    /// Create a generic validation error
+    pub fn other(field: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::new(ValidationErrorCode::Other, field, message)
+    }
 }
 
 impl std::fmt::Display for ValidationError {
@@ -101,74 +168,71 @@ impl std::error::Error for ValidationError {}
 /// for basic security concerns but not for existence or accessibility.
 fn validate_path(path: &str, field: &str) -> Result<(), ValidationError> {
     if path.is_empty() {
-        return Err(ValidationError {
-            field: field.to_string(),
-            message: "path cannot be empty".to_string(),
-        });
+        return Err(ValidationError::empty(field, "path cannot be empty"));
     }
     if path.chars().all(|c| c.is_whitespace()) {
-        return Err(ValidationError {
-            field: field.to_string(),
-            message: "path cannot be only whitespace".to_string(),
-        });
+        return Err(ValidationError::empty(field, "path cannot be only whitespace"));
     }
     if path.contains('\0') {
-        return Err(ValidationError {
-            field: field.to_string(),
-            message: "path contains null byte".to_string(),
-        });
+        return Err(ValidationError::invalid_chars(field, "path contains null byte"));
     }
     // Check for path traversal sequences (both forward and back slashes)
     // ".." is the standard parent directory reference
     if path.contains("..") {
-        return Err(ValidationError {
-            field: field.to_string(),
-            message: "path contains traversal sequence (..)".to_string(),
-        });
+        return Err(ValidationError::new(
+            ValidationErrorCode::PathTraversal,
+            field,
+            "path contains traversal sequence (..)",
+        ));
     }
     // Check for URL-encoded path traversal (%2e = '.', case insensitive)
     // This catches %2e%2e, %2E%2E, and mixed case variants
     let lower = path.to_lowercase();
     if lower.contains("%2e") {
-        return Err(ValidationError {
-            field: field.to_string(),
-            message: "path contains URL-encoded characters (%2e)".to_string(),
-        });
+        return Err(ValidationError::new(
+            ValidationErrorCode::EncodedPath,
+            field,
+            "path contains URL-encoded characters (%2e)",
+        ));
     }
     // Check for double URL-encoding (%25 = '%')
     if lower.contains("%25") {
-        return Err(ValidationError {
-            field: field.to_string(),
-            message: "path contains double-encoded characters (%25)".to_string(),
-        });
+        return Err(ValidationError::new(
+            ValidationErrorCode::EncodedPath,
+            field,
+            "path contains double-encoded characters (%25)",
+        ));
     }
     // Check for backslash encoding (%5c = '\')
     if lower.contains("%5c") {
-        return Err(ValidationError {
-            field: field.to_string(),
-            message: "path contains encoded backslash (%5c)".to_string(),
-        });
+        return Err(ValidationError::new(
+            ValidationErrorCode::EncodedPath,
+            field,
+            "path contains encoded backslash (%5c)",
+        ));
     }
     // Check for forward slash encoding (%2f = '/')
     if lower.contains("%2f") {
-        return Err(ValidationError {
-            field: field.to_string(),
-            message: "path contains encoded forward slash (%2f)".to_string(),
-        });
+        return Err(ValidationError::new(
+            ValidationErrorCode::EncodedPath,
+            field,
+            "path contains encoded forward slash (%2f)",
+        ));
     }
     // Check for home directory expansion (could escape intended directories)
     if path.starts_with('~') {
-        return Err(ValidationError {
-            field: field.to_string(),
-            message: "path contains home directory expansion (~)".to_string(),
-        });
+        return Err(ValidationError::new(
+            ValidationErrorCode::HomeExpansion,
+            field,
+            "path contains home directory expansion (~)",
+        ));
     }
     // Check for control characters that could cause issues
     if path.chars().any(|c| c.is_control()) {
-        return Err(ValidationError {
-            field: field.to_string(),
-            message: "path contains control characters".to_string(),
-        });
+        return Err(ValidationError::invalid_chars(
+            field,
+            "path contains control characters",
+        ));
     }
     Ok(())
 }
@@ -185,10 +249,7 @@ fn is_valid_tensor_name(name: &str) -> bool {
 /// Validate a non-empty string field
 fn validate_non_empty(value: &str, field: &str) -> Result<(), ValidationError> {
     if value.is_empty() {
-        return Err(ValidationError {
-            field: field.to_string(),
-            message: "cannot be empty".to_string(),
-        });
+        return Err(ValidationError::empty(field, "cannot be empty"));
     }
     Ok(())
 }
@@ -498,98 +559,98 @@ impl PluginMetadataRpc {
     pub fn validate(&self) -> Result<(), ValidationError> {
         if let Some(ref desc) = self.description {
             if desc.len() > MAX_METADATA_DESCRIPTION_LEN {
-                return Err(ValidationError {
-                    field: "description".to_string(),
-                    message: format!(
+                return Err(ValidationError::too_long(
+                    "description",
+                    format!(
                         "description exceeds {} bytes (got {})",
                         MAX_METADATA_DESCRIPTION_LEN,
                         desc.len()
                     ),
-                });
+                ));
             }
         }
         if let Some(ref author) = self.author {
             if author.len() > MAX_METADATA_AUTHOR_LEN {
-                return Err(ValidationError {
-                    field: "author".to_string(),
-                    message: format!(
+                return Err(ValidationError::too_long(
+                    "author",
+                    format!(
                         "author exceeds {} bytes (got {})",
                         MAX_METADATA_AUTHOR_LEN,
                         author.len()
                     ),
-                });
+                ));
             }
         }
         if let Some(ref homepage) = self.homepage {
             if homepage.len() > MAX_METADATA_URL_LEN {
-                return Err(ValidationError {
-                    field: "homepage".to_string(),
-                    message: format!(
+                return Err(ValidationError::too_long(
+                    "homepage",
+                    format!(
                         "homepage URL exceeds {} bytes (got {})",
                         MAX_METADATA_URL_LEN,
                         homepage.len()
                     ),
-                });
+                ));
             }
         }
         if let Some(ref license) = self.license {
             if license.len() > MAX_METADATA_LICENSE_LEN {
-                return Err(ValidationError {
-                    field: "license".to_string(),
-                    message: format!(
+                return Err(ValidationError::too_long(
+                    "license",
+                    format!(
                         "license exceeds {} bytes (got {})",
                         MAX_METADATA_LICENSE_LEN,
                         license.len()
                     ),
-                });
+                ));
             }
         }
         if let Some(ref repository) = self.repository {
             if repository.len() > MAX_METADATA_URL_LEN {
-                return Err(ValidationError {
-                    field: "repository".to_string(),
-                    message: format!(
+                return Err(ValidationError::too_long(
+                    "repository",
+                    format!(
                         "repository URL exceeds {} bytes (got {})",
                         MAX_METADATA_URL_LEN,
                         repository.len()
                     ),
-                });
+                ));
             }
         }
         if let Some(ref targets) = self.supported_targets {
             if targets.len() > MAX_SUPPORTED_TARGETS {
-                return Err(ValidationError {
-                    field: "supported_targets".to_string(),
-                    message: format!(
+                return Err(ValidationError::too_many_items(
+                    "supported_targets",
+                    format!(
                         "supported_targets exceeds {} items (got {})",
                         MAX_SUPPORTED_TARGETS,
                         targets.len()
                     ),
-                });
+                ));
             }
             for (i, target) in targets.iter().enumerate() {
                 if target.len() > MAX_TARGET_TRIPLE_LEN {
-                    return Err(ValidationError {
-                        field: format!("supported_targets[{}]", i),
-                        message: format!(
+                    return Err(ValidationError::too_long(
+                        format!("supported_targets[{}]", i),
+                        format!(
                             "target triple exceeds {} bytes (got {})",
                             MAX_TARGET_TRIPLE_LEN,
                             target.len()
                         ),
-                    });
+                    ));
                 }
             }
         }
         if let Some(ref version) = self.min_hodu_version {
             if version.len() > MAX_METADATA_VERSION_LEN {
-                return Err(ValidationError {
-                    field: "min_hodu_version".to_string(),
-                    message: format!(
+                return Err(ValidationError::too_long(
+                    "min_hodu_version",
+                    format!(
                         "min_hodu_version exceeds {} bytes (got {})",
                         MAX_METADATA_VERSION_LEN,
                         version.len()
                     ),
-                });
+                ));
             }
         }
         Ok(())
@@ -671,45 +732,43 @@ impl InitializeResult {
     /// `Err(ValidationError)` with details about which limit was exceeded.
     pub fn validate_limits(&self) -> Result<(), ValidationError> {
         if self.capabilities.len() > MAX_CAPABILITIES {
-            return Err(ValidationError {
-                field: "capabilities".to_string(),
-                message: format!(
+            return Err(ValidationError::too_many_items(
+                "capabilities",
+                format!(
                     "too many capabilities ({} > {})",
                     self.capabilities.len(),
                     MAX_CAPABILITIES
                 ),
-            });
+            ));
         }
         if let Some(ref exts) = self.model_extensions {
             if exts.len() > MAX_EXTENSIONS {
-                return Err(ValidationError {
-                    field: "model_extensions".to_string(),
-                    message: format!("too many extensions ({} > {})", exts.len(), MAX_EXTENSIONS),
-                });
+                return Err(ValidationError::too_many_items(
+                    "model_extensions",
+                    format!("too many extensions ({} > {})", exts.len(), MAX_EXTENSIONS),
+                ));
             }
         }
         if let Some(ref exts) = self.tensor_extensions {
             if exts.len() > MAX_EXTENSIONS {
-                return Err(ValidationError {
-                    field: "tensor_extensions".to_string(),
-                    message: format!("too many extensions ({} > {})", exts.len(), MAX_EXTENSIONS),
-                });
+                return Err(ValidationError::too_many_items(
+                    "tensor_extensions",
+                    format!("too many extensions ({} > {})", exts.len(), MAX_EXTENSIONS),
+                ));
             }
         }
         if let Some(ref devices) = self.devices {
             if devices.len() > MAX_DEVICES {
-                return Err(ValidationError {
-                    field: "devices".to_string(),
-                    message: format!("too many devices ({} > {})", devices.len(), MAX_DEVICES),
-                });
+                return Err(ValidationError::too_many_items(
+                    "devices",
+                    format!("too many devices ({} > {})", devices.len(), MAX_DEVICES),
+                ));
             }
         }
         if let Some(ref meta) = self.metadata {
             // Validate all metadata fields including string lengths
-            meta.validate().map_err(|e| ValidationError {
-                field: format!("metadata.{}", e.field),
-                message: e.message,
-            })?;
+            meta.validate()
+                .map_err(|e| ValidationError::new(e.code, format!("metadata.{}", e.field), e.message))?;
         }
         Ok(())
     }
@@ -821,10 +880,10 @@ impl RunParams {
         validate_path(&self.snapshot_path, "snapshot_path")?;
         validate_non_empty(&self.device, "device")?;
         if self.inputs.len() > MAX_INPUTS {
-            return Err(ValidationError {
-                field: "inputs".to_string(),
-                message: format!("too many inputs ({} > {})", self.inputs.len(), MAX_INPUTS),
-            });
+            return Err(ValidationError::too_many_items(
+                "inputs",
+                format!("too many inputs ({} > {})", self.inputs.len(), MAX_INPUTS),
+            ));
         }
         for (i, input) in self.inputs.iter().enumerate() {
             input.validate().map_err(|mut e| {
@@ -854,6 +913,15 @@ impl TensorInput {
         }
     }
 
+    /// Create new tensor input with validation
+    ///
+    /// Returns `Err(ValidationError)` if the name or path is invalid.
+    pub fn new_checked(name: impl Into<String>, path: impl Into<String>) -> Result<Self, ValidationError> {
+        let input = Self::new(name, path);
+        input.validate()?;
+        Ok(input)
+    }
+
     /// Validate tensor name (non-empty, no control chars, no path separators)
     pub fn is_valid_name(&self) -> bool {
         is_valid_tensor_name(&self.name)
@@ -862,13 +930,13 @@ impl TensorInput {
     /// Validate the tensor input
     pub fn validate(&self) -> Result<(), ValidationError> {
         if !self.is_valid_name() {
-            return Err(ValidationError {
-                field: "name".to_string(),
-                message: format!(
+            return Err(ValidationError::invalid_chars(
+                "name",
+                format!(
                     "invalid tensor name (must be non-empty, max {} bytes, no control chars or path separators)",
                     MAX_TENSOR_NAME_LEN
                 ),
-            });
+            ));
         }
         validate_path(&self.path, "path")
     }
@@ -899,16 +967,25 @@ impl TensorOutput {
         }
     }
 
+    /// Create new tensor output with validation
+    ///
+    /// Returns `Err(ValidationError)` if the name or path is invalid.
+    pub fn new_checked(name: impl Into<String>, path: impl Into<String>) -> Result<Self, ValidationError> {
+        let output = Self::new(name, path);
+        output.validate()?;
+        Ok(output)
+    }
+
     /// Validate the tensor output
     pub fn validate(&self) -> Result<(), ValidationError> {
         if !self.is_valid_name() {
-            return Err(ValidationError {
-                field: "name".to_string(),
-                message: format!(
+            return Err(ValidationError::invalid_chars(
+                "name",
+                format!(
                     "invalid tensor name (must be non-empty, max {} bytes, no control chars or path separators)",
                     MAX_TENSOR_NAME_LEN
                 ),
-            });
+            ));
         }
         validate_path(&self.path, "path")
     }
@@ -973,10 +1050,10 @@ impl ProgressParams {
     pub fn validate(&self) -> Result<(), ValidationError> {
         if let Some(percent) = self.percent {
             if percent > 100 {
-                return Err(ValidationError {
-                    field: "percent".to_string(),
-                    message: format!("percent must be 0-100, got {}", percent),
-                });
+                return Err(ValidationError::out_of_range(
+                    "percent",
+                    format!("percent must be 0-100, got {}", percent),
+                ));
             }
         }
         validate_non_empty(&self.message, "message")
@@ -998,7 +1075,7 @@ pub struct LogParams {
 }
 
 impl LogParams {
-    /// Create new log params with validation
+    /// Create new log params
     pub fn new(level: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
             level: level.into(),
@@ -1006,17 +1083,26 @@ impl LogParams {
         }
     }
 
+    /// Create new log params with validation
+    ///
+    /// Returns `Err(ValidationError)` if the level or message is invalid.
+    pub fn new_checked(level: impl Into<String>, message: impl Into<String>) -> Result<Self, ValidationError> {
+        let params = Self::new(level, message);
+        params.validate()?;
+        Ok(params)
+    }
+
     /// Validate the parameters
     pub fn validate(&self) -> Result<(), ValidationError> {
         if !self.is_valid_level() {
-            return Err(ValidationError {
-                field: "level".to_string(),
-                message: format!(
+            return Err(ValidationError::invalid_chars(
+                "level",
+                format!(
                     "invalid log level '{}', expected one of: {}",
                     self.level,
                     VALID_LOG_LEVELS.join(", ")
                 ),
-            });
+            ));
         }
         validate_non_empty(&self.message, "message")
     }

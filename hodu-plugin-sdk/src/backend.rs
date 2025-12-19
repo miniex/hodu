@@ -281,13 +281,22 @@ pub fn check_build_capability(target: &SupportedTarget) -> BuildCapability {
     if !target.host_only.is_empty() {
         let host_allowed = target.host_only.iter().any(|p| host_matches_pattern(host, p));
         if !host_allowed {
+            // Limit hosts list to prevent huge error messages
+            const MAX_HOSTS_SHOWN: usize = 10;
+            let hosts_display = if target.host_only.len() > MAX_HOSTS_SHOWN {
+                format!(
+                    "{} (and {} more)",
+                    target.host_only[..MAX_HOSTS_SHOWN].join(", "),
+                    target.host_only.len() - MAX_HOSTS_SHOWN
+                )
+            } else {
+                target.host_only.join(", ")
+            };
             return BuildCapability::unavailable(
                 vec![],
                 format!(
                     "Host '{}' cannot build target '{}'. Allowed hosts: {}",
-                    host,
-                    target.triple,
-                    target.host_only.join(", ")
+                    host, target.triple, hosts_display
                 ),
             );
         }

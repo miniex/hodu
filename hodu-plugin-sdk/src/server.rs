@@ -228,6 +228,15 @@ impl DebugOptions {
 // Notification helpers (can be called from handlers)
 // ============================================================================
 
+/// Internal helper to send a notification to stdout
+fn send_notification(notification: &Notification) -> Result<(), std::io::Error> {
+    use std::io::Write;
+    let json =
+        serde_json::to_string(notification).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    writeln!(std::io::stdout(), "{}", json)?;
+    std::io::stdout().flush()
+}
+
 /// Send a progress notification to the CLI (fire-and-forget)
 ///
 /// # Arguments
@@ -247,16 +256,12 @@ pub fn notify_progress(percent: Option<u8>, message: &str) {
 ///
 /// Messages exceeding 64KB will be truncated to prevent memory issues.
 pub fn try_notify_progress(percent: Option<u8>, message: &str) -> Result<(), std::io::Error> {
-    use std::io::Write;
     // Clamp percent to 0-100
     let percent = percent.map(|p| p.min(100));
     // Truncate message if too long (UTF-8 safe)
     let message = truncate_utf8(message, MAX_NOTIFICATION_MESSAGE_LEN);
     let notification = Notification::progress(percent, message);
-    let json =
-        serde_json::to_string(&notification).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-    writeln!(std::io::stdout(), "{}", json)?;
-    std::io::stdout().flush()
+    send_notification(&notification)
 }
 
 /// Valid log levels
@@ -281,7 +286,6 @@ pub fn notify_log(level: &str, message: &str) {
 ///
 /// Messages exceeding 64KB will be truncated to prevent memory issues.
 pub fn try_notify_log(level: &str, message: &str) -> Result<(), std::io::Error> {
-    use std::io::Write;
     // Validate log level, default to "info" if invalid
     let level = if VALID_LOG_LEVELS.contains(&level) {
         level
@@ -291,10 +295,7 @@ pub fn try_notify_log(level: &str, message: &str) -> Result<(), std::io::Error> 
     // Truncate message if too long (UTF-8 safe)
     let message = truncate_utf8(message, MAX_NOTIFICATION_MESSAGE_LEN);
     let notification = Notification::log(level, message);
-    let json =
-        serde_json::to_string(&notification).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-    writeln!(std::io::stdout(), "{}", json)?;
-    std::io::stdout().flush()
+    send_notification(&notification)
 }
 
 /// Convenience functions for different log levels
@@ -537,26 +538,21 @@ struct ActiveRequestGuard {
 
 impl Drop for ActiveRequestGuard {
     fn drop(&mut self) {
-        // Retry with exponential backoff to handle transient lock contention
-        // This prevents memory leaks when try_lock fails due to timing
-        const MAX_RETRIES: u32 = 5;
-        let mut retries = 0;
-
-        while retries < MAX_RETRIES {
-            if let Ok(mut guard) = self.active_requests.try_lock() {
+        // Try to acquire lock without blocking - avoid thread::yield_now() in async context
+        // as it blocks the executor thread. A single try_lock is safe in Drop.
+        match self.active_requests.try_lock() {
+            Ok(mut guard) => {
                 guard.remove(&self.id);
-                return;
-            }
-            retries += 1;
-            // Brief yield to allow other tasks to release the lock
-            std::thread::yield_now();
+            },
+            Err(_) => {
+                // Lock contention is rare and bounded - the entry will be cleaned up
+                // when the request completes. Log warning since this could affect cancellation.
+                eprintln!(
+                    "Warning: Failed to cleanup active_request for {:?} (lock contention)",
+                    self.id
+                );
+            },
         }
-
-        // Log warning in all builds since this could cause memory issues
-        eprintln!(
-            "Warning: Failed to cleanup active_request for {:?} after {} retries (potential memory leak)",
-            self.id, MAX_RETRIES
-        );
     }
 }
 

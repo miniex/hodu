@@ -185,3 +185,24 @@
 - [x] Sanitize file paths in error messages - intentionally showing full paths for CLI debugging (documented as acceptable)
 - [x] Reduce string allocations in list_plugins - `plugin.rs:140-243` now reuses buffers across iterations
 - [x] Add device string validation - `run.rs:466-483` now validates characters, length, rejects dangerous patterns
+
+---
+
+## Newly Discovered Issues (10th Analysis)
+
+**Panic Safety:** (🔴 Critical)
+- [x] Fix HashMap expect() after contains_key - `process.rs:78,104` added SAFETY comments explaining guarantee
+
+**Race Conditions:** (🔴 Critical)
+- [x] Fix TOCTOU in file existence checks - `run.rs:77,235-245` removed exists() check, use single file handle for size+read
+
+**Resource Management:** (🟡 Important)
+- [x] Fix lock file cleanup TOCTOU - `install.rs:35-40` now checks error kind instead of exists()
+
+**Validation:** (🟡 Important)
+- [x] Validate temp file integrity - `run.rs:195-208` save_tensor_data returns error on failure
+- [x] Make 10GB snapshot limit configurable - `run.rs:233-247` now configurable via `HODU_MAX_SNAPSHOT_SIZE` env var
+
+**Code Quality:** (🟢 Nice-to-have)
+- [x] Extract plugin listing logic - `plugin.rs:130` added `list_plugin_section()` generic helper with closures
+- [x] Add per-plugin timeout in doctor - `doctor.rs:71` now uses 10-second timeout per plugin

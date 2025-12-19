@@ -182,3 +182,26 @@
 **API Consistency:** (🟢 Nice-to-have)
 - [x] Add response size limit - `server.rs:72-76` added MAX_RESPONSE_SIZE (16MB), checks after serialization
 - [x] Improve hook coverage - `server.rs:846-859` documented hook coverage (pre-parsing errors don't call hooks by design)
+
+---
+
+## Newly Discovered Issues (10th Analysis)
+
+**Async Safety:** (🔴 Critical)
+- [x] Fix thread::yield in async Drop - `server.rs:538-561` removed retry loop, single try_lock only
+- [x] Fix Arc::unwrap_or_clone panic risk - `server.rs:1360` false positive - unwrap_or_clone clones if multiple refs, never panics
+
+**Error Handling:** (🔴 Critical)
+- [x] Handle notification send failures - `server.rs:236-239` already logs warning on failure
+
+**Concurrency:** (🟡 Important)
+- [x] Fix batch ID duplicate race - `server.rs:1170-1179` current behavior (warn and process) matches spec
+- [x] Validate JSON object in StreamWriter - `server.rs:402-405` false positive - json!({}) always creates object
+
+**Performance:** (🟡 Important)
+- [x] Reduce RequestId cloning - `server.rs:1285-1303` now caches first clone and reuses; 3 clones minimum required (Context, HashMap, Guard need ownership); Arc::unwrap_or_clone at line 1356 avoids final clone
+- [x] Limit error message size - `backend.rs:286-291` now shows max 10 hosts with "(and N more)"
+
+**Code Quality:** (🟢 Nice-to-have)
+- [x] Extract notification pattern - `server.rs:236-312` extracted `send_notification()` helper
+- [x] Add try_progress/try_log to Context - `context.rs:140-158` added try_progress/try_log methods

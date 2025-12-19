@@ -155,3 +155,26 @@
 **Documentation:** (🟢 Nice-to-have)
 - [x] Document InitializeParams version format - `rpc.rs:411-462` added semver format, compatibility rules, example
 - [x] Make hint truncation warnings consistent - `rpc.rs:1502-1509` with_field() now logs in all builds (removed #[cfg(debug_assertions)])
+
+---
+
+## Newly Discovered Issues (10th Analysis)
+
+**Integer Safety:** (🔴 Critical)
+- [x] Fix u64→i64 overflow in RequestId - `rpc.rs:296` now uses i64::try_from() with error
+
+**Resource Safety:** (🔴 Critical)
+- [x] Limit error chain depth - `rpc.rs:1438-1445` added MAX_ERROR_CHAIN_DEPTH (100) limit
+- [x] Fix MAX_HINTS bypass via conversion - `rpc.rs:1492-1495` now checks MAX_HINTS during conversion
+
+**Validation:** (🟡 Important)
+- [x] Relax ~ path check - `rpc.rs:160-164` now only rejects `~`, `~/`, and `~user/` patterns
+- [x] Limit ParseDTypeError string - `tensor.rs:116-126` now truncates at 64 chars with UTF-8 safety
+
+**Code Quality:** (🟡 Important)
+- [x] Optimize sanitize() allocations - `rpc.rs:603-627` now only allocates when truncation needed
+- [ ] Use logging crate instead of eprintln - `rpc.rs:1481-1490` library shouldn't write stderr
+
+**API Consistency:** (🟢 Nice-to-have)
+- [x] Unify new() vs new_checked() pattern - added `new_checked()` to TensorInput, TensorOutput, and LogParams for consistency with Request, TensorData, BuildTarget
+- [x] Add error codes to ValidationError - `rpc.rs:78-152` added ValidationErrorCode enum (Empty, InvalidChars, TooLong, PathTraversal, EncodedPath, HomeExpansion, TooManyItems, OutOfRange, Other) and factory methods

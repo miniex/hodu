@@ -73,10 +73,8 @@ pub struct RunArgs {
 }
 
 pub fn execute(args: RunArgs) -> Result<(), Box<dyn std::error::Error>> {
-    // Check if model file exists
-    if !args.model.exists() {
-        return Err(format!("Model file not found: {}", args.model.display()).into());
-    }
+    // Note: We don't check exists() here to avoid TOCTOU race conditions.
+    // File operations will fail with descriptive errors if the file doesn't exist.
 
     // Validate timeout range
     if let Some(timeout) = args.timeout {
@@ -231,18 +229,31 @@ pub fn execute(args: RunArgs) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Compute cache key from snapshot content (with size limit check)
-    const MAX_SNAPSHOT_SIZE: u64 = 10 * 1024 * 1024 * 1024; // 10GB limit
-    let snapshot_size = std::fs::metadata(&snapshot_path)
+    // Use a single open file handle to avoid TOCTOU race conditions
+    // Limit is configurable via HODU_MAX_SNAPSHOT_SIZE env var (in bytes)
+    const DEFAULT_MAX_SNAPSHOT_SIZE: u64 = 10 * 1024 * 1024 * 1024; // 10GB default
+    let max_snapshot_size = std::env::var("HODU_MAX_SNAPSHOT_SIZE")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(DEFAULT_MAX_SNAPSHOT_SIZE);
+    let snapshot_file = std::fs::File::open(&snapshot_path).map_err(|e| format!("Failed to open snapshot: {}", e))?;
+    let snapshot_size = snapshot_file
+        .metadata()
         .map_err(|e| format!("Failed to read snapshot metadata: {}", e))?
         .len();
-    if snapshot_size > MAX_SNAPSHOT_SIZE {
+    if snapshot_size > max_snapshot_size {
         return Err(format!(
-            "Snapshot file too large: {} bytes (max: {} bytes)",
-            snapshot_size, MAX_SNAPSHOT_SIZE
+            "Snapshot file too large: {} bytes (max: {} bytes, set HODU_MAX_SNAPSHOT_SIZE to override)",
+            snapshot_size, max_snapshot_size
         )
         .into());
     }
-    let snapshot_content = std::fs::read(&snapshot_path).map_err(|e| format!("Failed to read snapshot: {}", e))?;
+    // Read from the already-opened handle to avoid TOCTOU
+    use std::io::Read;
+    let mut snapshot_content = Vec::new();
+    std::io::BufReader::new(snapshot_file)
+        .read_to_end(&mut snapshot_content)
+        .map_err(|e| format!("Failed to read snapshot: {}", e))?;
     let mut hasher = Sha256::new();
     hasher.update(&snapshot_content);
     hasher.update(current_host_triple().as_bytes());

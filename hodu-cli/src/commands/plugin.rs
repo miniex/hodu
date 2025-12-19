@@ -126,6 +126,46 @@ pub fn execute(args: PluginArgs) -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
+/// Helper to list plugins with a common pattern
+fn list_plugin_section<'a, I, F, G>(plugins: I, use_color: bool, get_tags: F, get_extra: G)
+where
+    I: Iterator<Item = &'a hodu_plugin_runtime::PluginEntry>,
+    F: Fn(&hodu_plugin_runtime::PluginCapabilities) -> Vec<&'static str>,
+    G: Fn(&hodu_plugin_runtime::PluginCapabilities, &mut String),
+{
+    let plugins: Vec<_> = plugins.collect();
+    if plugins.is_empty() {
+        print_empty(use_color);
+    } else {
+        let mut extra_buf = String::with_capacity(64);
+        for plugin in plugins {
+            let caps = &plugin.capabilities;
+            let tags = get_tags(caps);
+            extra_buf.clear();
+            get_extra(caps, &mut extra_buf);
+            print_plugin_row(
+                &plugin.name,
+                &plugin.version,
+                &tags,
+                Some(&extra_buf),
+                plugin.enabled,
+                use_color,
+            );
+        }
+    }
+}
+
+/// Helper to format extensions as ".ext1 .ext2"
+fn format_extensions(extensions: &[String], buf: &mut String) {
+    for (i, ext) in extensions.iter().enumerate() {
+        if i > 0 {
+            buf.push(' ');
+        }
+        buf.push('.');
+        buf.push_str(ext);
+    }
+}
+
 fn list_plugins() -> Result<(), Box<dyn std::error::Error>> {
     let use_color = output::supports_color();
 
@@ -133,114 +173,59 @@ fn list_plugins() -> Result<(), Box<dyn std::error::Error>> {
 
     // Backend plugins
     print_section("Backend Plugins", use_color);
-    let backends: Vec<_> = registry.all_backends().collect();
-    if backends.is_empty() {
-        print_empty(use_color);
-    } else {
-        // Pre-allocate tags buffer to avoid repeated allocations
-        let mut tags: Vec<&'static str> = Vec::with_capacity(2);
-        for plugin in backends {
-            let caps = &plugin.capabilities;
-            tags.clear();
+    list_plugin_section(
+        registry.all_backends(),
+        use_color,
+        |caps| {
+            let mut tags = Vec::with_capacity(2);
             if caps.runner.unwrap_or(false) {
                 tags.push("run");
             }
             if caps.builder.unwrap_or(false) {
                 tags.push("build");
             }
-
-            // Use pre-joined devices string from capabilities
-            let devices = caps.devices.join(", ");
-            print_plugin_row(
-                &plugin.name,
-                &plugin.version,
-                &tags,
-                Some(&devices),
-                plugin.enabled,
-                use_color,
-            );
-        }
-    }
+            tags
+        },
+        |caps, buf| buf.push_str(&caps.devices.join(", ")),
+    );
     println!();
 
     // Model format plugins
     print_section("Model Format Plugins", use_color);
-    let model_formats: Vec<_> = registry.all_model_formats().collect();
-    if model_formats.is_empty() {
-        print_empty(use_color);
-    } else {
-        // Reuse buffers across iterations
-        let mut tags: Vec<&'static str> = Vec::with_capacity(2);
-        let mut extensions_buf = String::with_capacity(64);
-        for plugin in model_formats {
-            let caps = &plugin.capabilities;
-            tags.clear();
+    list_plugin_section(
+        registry.all_model_formats(),
+        use_color,
+        |caps| {
+            let mut tags = Vec::with_capacity(2);
             if caps.load_model.unwrap_or(false) {
                 tags.push("load");
             }
             if caps.save_model.unwrap_or(false) {
                 tags.push("save");
             }
-
-            // Build extensions string in reusable buffer
-            extensions_buf.clear();
-            for (i, ext) in caps.model_extensions.iter().enumerate() {
-                if i > 0 {
-                    extensions_buf.push(' ');
-                }
-                extensions_buf.push('.');
-                extensions_buf.push_str(ext);
-            }
-            print_plugin_row(
-                &plugin.name,
-                &plugin.version,
-                &tags,
-                Some(&extensions_buf),
-                plugin.enabled,
-                use_color,
-            );
-        }
-    }
+            tags
+        },
+        |caps, buf| format_extensions(&caps.model_extensions, buf),
+    );
     println!();
 
     // Tensor format plugins
     print_section("Tensor Format Plugins", use_color);
-    let tensor_formats: Vec<_> = registry.all_tensor_formats().collect();
-    if tensor_formats.is_empty() {
-        print_empty(use_color);
-    } else {
-        // Reuse buffers across iterations
-        let mut tags: Vec<&'static str> = Vec::with_capacity(2);
-        let mut extensions_buf = String::with_capacity(64);
-        for plugin in tensor_formats {
-            let caps = &plugin.capabilities;
-            tags.clear();
+    list_plugin_section(
+        registry.all_tensor_formats(),
+        use_color,
+        |caps| {
+            let mut tags = Vec::with_capacity(2);
             if caps.load_tensor.unwrap_or(false) {
                 tags.push("load");
             }
             if caps.save_tensor.unwrap_or(false) {
                 tags.push("save");
             }
-
-            // Build extensions string in reusable buffer
-            extensions_buf.clear();
-            for (i, ext) in caps.tensor_extensions.iter().enumerate() {
-                if i > 0 {
-                    extensions_buf.push(' ');
-                }
-                extensions_buf.push('.');
-                extensions_buf.push_str(ext);
-            }
-            print_plugin_row(
-                &plugin.name,
-                &plugin.version,
-                &tags,
-                Some(&extensions_buf),
-                plugin.enabled,
-                use_color,
-            );
-        }
-    }
+            tags
+        },
+        |caps, buf| format_extensions(&caps.tensor_extensions, buf),
+    );
 
     Ok(())
 }

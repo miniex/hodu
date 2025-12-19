@@ -66,7 +66,9 @@ pub fn execute() -> Result<(), Box<dyn std::error::Error>> {
     // Show buildable targets per plugin
     print_section_header("Buildable Targets", use_color);
 
-    let mut manager = PluginManager::new()?;
+    // Use shorter timeout for doctor diagnostics (10 seconds per plugin operation)
+    const DOCTOR_TIMEOUT_SECS: u64 = 10;
+    let mut manager = PluginManager::with_timeout(DOCTOR_TIMEOUT_SECS)?;
 
     for plugin in &backends {
         if !plugin.enabled {

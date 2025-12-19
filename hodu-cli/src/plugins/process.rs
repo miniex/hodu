@@ -72,6 +72,8 @@ impl PluginManager {
     pub fn get_plugin(&mut self, name: &str) -> Result<&mut PluginClient, ProcessError> {
         // Check if already running
         if self.processes.contains_key(name) {
+            // SAFETY: We just confirmed the key exists via contains_key(), and nothing
+            // can modify the map between these calls in single-threaded Rust code.
             return Ok(&mut self
                 .processes
                 .get_mut(name)
@@ -101,6 +103,7 @@ impl PluginManager {
         let managed = self.spawn_plugin(&entry)?;
         self.processes.insert(name.to_string(), managed);
 
+        // SAFETY: We just inserted the key on the line above, so it must exist.
         Ok(&mut self.processes.get_mut(name).expect("key exists after insert").client)
     }
 

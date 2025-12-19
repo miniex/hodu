@@ -134,6 +134,13 @@ impl Context {
         crate::notify_progress(percent, message);
     }
 
+    /// Send a progress notification with error handling
+    ///
+    /// Returns an error if the notification fails to send.
+    pub fn try_progress(&self, percent: Option<u8>, message: &str) -> Result<(), std::io::Error> {
+        crate::try_notify_progress(percent, message)
+    }
+
     /// Send a log message
     ///
     /// # Arguments
@@ -141,6 +148,13 @@ impl Context {
     /// * `message` - Log message
     pub fn log(&self, level: &str, message: &str) {
         crate::notify_log(level, message);
+    }
+
+    /// Send a log message with error handling
+    ///
+    /// Returns an error if the notification fails to send.
+    pub fn try_log(&self, level: &str, message: &str) -> Result<(), std::io::Error> {
+        crate::try_notify_log(level, message)
     }
 
     /// Log an info message

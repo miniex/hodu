@@ -31,10 +31,11 @@ impl LockFileGuard {
 
 impl Drop for LockFileGuard {
     fn drop(&mut self) {
-        // Best effort cleanup - log warning on failure
+        // Best effort cleanup - check error kind to avoid TOCTOU race condition
         if let Err(e) = std::fs::remove_file(&self.path) {
-            // Only warn if file exists but couldn't be removed
-            if self.path.exists() {
+            // Ignore NotFound - file was already deleted (not an error)
+            // Warn on other errors (permission denied, etc.)
+            if e.kind() != std::io::ErrorKind::NotFound {
                 eprintln!("Warning: Failed to remove lock file: {}", e);
             }
         }
