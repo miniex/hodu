@@ -4,9 +4,7 @@
 
 ```
 hodu/
-├── hodu-lib/              # Main library (re-exports all crates)
-├── hodu-cli/              # Command-line interface
-├── hodu-plugin-sdk/       # Plugin SDK for backends/formats
+├── src/                   # Main library (re-exports hodu_internal)
 ├── crates/
 │   ├── hodu_core/         # Core tensor operations
 │   ├── hodu_nn/           # Neural network layers
@@ -32,9 +30,7 @@ cd hodu
 cargo build
 cargo test
 ./tools/format.sh
-./tools/check-lib.sh        # Check hodu-lib
-./tools/check-cli.sh        # Check hodu-cli
-./tools/check-plugin-sdk.sh # Check hodu-plugin-sdk
+./tools/check-lib.sh        # Check hodu
 ```
 
 ## Commit Style
@@ -59,6 +55,5 @@ chore(deps): bump serde to 1.0.228
 3. Ensure tests pass and code is formatted
 4. Add appropriate labels:
    - Category: `c-bug`, `c-feature`, `c-docs`, `c-performance`, `c-dependencies`
-   - Component: `m-lib`, `m-cli`, `m-gui`, `m-plugin-sdk`
    - Crate: `h-core`, `h-nn`, `h-datasets`, `h-kernels(cpu)`, `h-kernels(cuda)`, `h-kernels(metal)`
    - OS: `o-linux`, `o-macos`, `o-windows`

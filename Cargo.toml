@@ -1,19 +1,50 @@
+[package]
+name = "hodu"
+version = "0.3.0"
+description = "A machine learning library built with user convenience at its core"
+license = "BSD-3-Clause"
+authors = ["Han Damin <miniex@daminstudio.net>"]
+edition = "2021"
+publish = true
+repository = "https://github.com/daminstudio/hodu"
+documentation = "https://docs.rs/hodu"
+readme = "README.md"
+keywords = ["tensor", "machine-learning", "hodu"]
+categories = ["science"]
+
+[features]
+default = ["serde"]
+serde = ["hodu_internal/serde"]
+
+# optional dtype
+f8e5m2 = ["hodu_internal/f8e5m2"]
+f64 = ["hodu_internal/f64"]
+u16 = ["hodu_internal/u16"]
+u64 = ["hodu_internal/u64"]
+i16 = ["hodu_internal/i16"]
+i64 = ["hodu_internal/i64"]
+
+# optional cpu accelerator
+openblas = ["hodu_internal/openblas"]
+
+# optional device
+cuda = ["hodu_internal/cuda"]
+metal = ["hodu_internal/metal"]
+
+[dependencies]
+hodu_internal = { workspace = true }
+
 [workspace]
-members = ["crates/*", "hodu-cli", "hodu-lib", "hodu-plugin-sdk", "hodu-plugin-sdk/macros"]
-exclude = ["crates/hodu_cuda_kernels", "crates/hodu_metal_kernels", "hodu-plugin-sdk/template"]
+members = ["crates/*"]
+exclude = ["crates/hodu_cuda_kernels", "crates/hodu_metal_kernels"]
 resolver = "2"
 
 [workspace.dependencies]
-chrono = { version = "0.4.42", default-features = false, features = ["std", "clock"] }
-clap = { version = "4.5.53" }
-clap_complete = { version = "4.5.53" }
-ctrlc = "3.5.1"
 dashmap = "6.1.0"
 dirs = { version = "6.0.0" }
 float8 = { version = "0.5.0", features = ["num-traits", "rand_distr"] }
 fs2 = "0.4.3"
 half = { version = "2.7.1", features = ["num-traits", "rand_distr"] }
-hex = "0.4.3"
 hodu_core = { path = "crates/hodu_core", version = "0.3.0" }
 hodu_cpu_kernels = { path = "crates/hodu_cpu_kernels", version = "0.3.0" }
 hodu_cuda_kernels = { path = "crates/hodu_cuda_kernels", version = "0.3.0" }
@@ -26,7 +57,6 @@ hodu_nn = { path = "crates/hodu_nn", version = "0.3.0" }
 hodu_nn_macros = { path = "crates/hodu_nn/macros", version = "0.3.0" }
 hodu_plugin = { path = "crates/hodu_plugin", version = "0.1.0" }
 hodu_plugin_runtime = { path = "crates/hodu_plugin_runtime", version = "0.1.0", default-features = false }
-inquire = "0.9.1"
 log = "0.4.29"
 num-traits = { version = "0.2.19" }
 paste = "1.0.15"
@@ -38,13 +68,6 @@ rand_distr = { version = "0.5.1" }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = { version = "1.0.145" }
 serde_repr = "0.1.20"
-sha2 = "0.10.9"
 smallvec = { version = "1.15.1" }
-tempfile = "3.23"
 syn = { version = "2.0", features = ["full"] }
-tokio = { version = "1.48", features = ["rt", "sync", "io-util", "macros", "time"] }
-tokio-util = { version = "0.7.17" }
-toml = { version = "0.9.9" }
 toml_edit = { version = "0.23.10", features = ["parse"] }
-ureq = { version = "3.1.4" }
-wait-timeout = "0.2.1"

@@ -39,21 +39,10 @@ done
 
 popd
 
-echo "Publishing hodu/lib"
-cp LICENSE hodu/lib/
-pushd hodu/lib
+echo "Publishing hodu"
+cp LICENSE .
 git add LICENSE
 cargo publish --no-verify --allow-dirty
-popd
-
-sleep 20
-
-echo "Publishing hodu/cli"
-cp LICENSE hodu/cli/
-pushd hodu/cli
-git add LICENSE
-cargo publish --no-verify --allow-dirty
-popd
 
 echo "Cleaning local state"
 git reset HEAD --hard

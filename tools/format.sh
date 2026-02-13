@@ -37,12 +37,6 @@ if [ -d "benchmarks" ]; then
     done
 fi
 
-# Format plugin-sdk template files
-if [ -d "hodu-plugin-sdk/template/src" ]; then
-    echo -e "  ${CYAN}→${NC} ${DIM}hodu-plugin-sdk/template/src${NC}"
-    rustfmt hodu-plugin-sdk/template/src/*.rs 2>/dev/null || true
-fi
-
 echo -e "${BRIGHT_GREEN}✓${NC} Rust formatting complete\n"
 
 # Format C/C++/CUDA/Metal files
