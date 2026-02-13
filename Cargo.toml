@@ -42,7 +42,7 @@ resolver = "2"
 [workspace.dependencies]
 dashmap = "6.1.0"
 dirs = { version = "6.0.0" }
-float8 = { version = "0.5.0", features = ["num-traits", "rand_distr"] }
+float8 = { version = "0.7.0", features = ["num-traits", "rand_distr"] }
 fs2 = "0.4.3"
 half = { version = "2.7.1", features = ["num-traits", "rand_distr"] }
 hodu_core = { path = "crates/hodu_core", version = "0.3.0" }
