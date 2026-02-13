@@ -14,7 +14,11 @@ hodu/
 │   ├── hodu_cuda_kernels/ # CUDA GPU kernels
 │   ├── hodu_internal/     # Internal utilities
 │   └── hodu_macro_utils/  # Macro utilities
-└── tools/                 # Development scripts
+└── tools/
+    ├── check.sh           # Feature combination checker
+    ├── format.sh          # Code formatter (Rust, C/C++, Python)
+    ├── publish.sh         # crates.io publish script
+    └── rust-tidy/         # Cargo.toml sorter & import linter (submodule)
 ```
 
 ## Requirements
@@ -29,8 +33,10 @@ git clone https://github.com/miniex/hodu.git
 cd hodu
 cargo build
 cargo test
-./tools/format.sh
-./tools/check-lib.sh        # Check hodu
+./tools/format.sh                          # Format code
+./tools/check.sh                           # Check feature combinations
+python tools/rust-tidy/toml_dep_sorter.py  # Sort Cargo.toml deps
+python tools/rust-tidy/import_linter.py    # Lint import ordering
 ```
 
 ## Commit Style
