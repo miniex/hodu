@@ -1,0 +1,3 @@
+[submodule "tools/rust-tidy"]
+	path = tools/rust-tidy
+	url = https://github.com/miniex/rust-tidy.git
