@@ -34,6 +34,7 @@ metal = ["hodu_internal/metal"]
 [dependencies]
 hodu_internal = { workspace = true }
 
+
 [workspace]
 members = ["crates/*"]
 exclude = ["crates/hodu_cuda_kernels", "crates/hodu_metal_kernels"]

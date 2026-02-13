@@ -14,9 +14,16 @@ format = []
 backend = []
 
 [dependencies]
-hodu_core = { workspace = true, features = ["f8e5m2", "f64", "u16", "u64", "i16", "i64"] }
-hodu_plugin = { workspace = true }
 dirs = { workspace = true }
 fs2 = { workspace = true }
+hodu_core = { workspace = true, features = [
+    "f64",
+    "f8e5m2",
+    "i16",
+    "i64",
+    "u16",
+    "u64"
+] }
+hodu_plugin = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }

@@ -14,6 +14,7 @@ pub use compiler::Compiler;
 pub use device::Device;
 pub use dim::{Dim, DynamicDimId};
 pub use dtype::DType;
+pub use dtypes::*;
 pub use dynamic_registry::{clear_resolved_dimensions, get_resolved_dimension, resolve_dimension};
 #[cfg(feature = "serde")]
 pub use format::Format;
@@ -69,4 +70,3 @@ mod dtypes {
     #[cfg(feature = "i64")]
     pub const i64: DType = DType::I64;
 }
-pub use dtypes::*;

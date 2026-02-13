@@ -14,22 +14,16 @@ std = ["cudarc/std"]
 
 [dependencies]
 cudarc = { version = "0.19.2", default-features = false, features = [
-    "f8",
-    "f16",
     "cublas",
     "cublaslt",
     "cuda-version-from-build-system",
     "driver",
     "dynamic-linking",
+    "f16",
+    "f8",
     "nvrtc"
 ] }
-float8 = { version = "0.7.0", default-features = false, features = [
-    "num-traits",
-    "rand_distr",
-] }
-half = { version = "2.7.1", default-features = false, features = [
-    "num-traits",
-    "rand_distr",
-] }
+float8 = { version = "0.7.0", default-features = false, features = ["num-traits", "rand_distr"] }
+half = { version = "2.7.1", default-features = false, features = ["num-traits", "rand_distr"] }
 paste = "1.0.15"
 spin = "0.10"

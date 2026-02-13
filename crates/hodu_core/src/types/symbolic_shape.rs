@@ -1,8 +1,7 @@
-use smallvec::SmallVec;
-use std::fmt;
-
 use super::dim::{Dim, DynamicDimId};
 use super::shape::Shape;
+use smallvec::SmallVec;
+use std::fmt;
 
 /// Shape that can contain dynamic dimensions
 ///

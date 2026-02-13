@@ -1,7 +1,6 @@
-use hodu_core::{error::HoduResult, tensor::Tensor};
-
 use super::batch::{Batch, DataItem};
 use super::dataset::Dataset;
+use hodu_core::{error::HoduResult, tensor::Tensor};
 
 pub type CollateFn = fn(Vec<DataItem>) -> HoduResult<Batch>;
 

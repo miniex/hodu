@@ -1,11 +1,12 @@
 pub mod capture;
 
-pub use capture::{CaptureBoard, CaptureBoardId};
-
 use crate::{
     ops::{Op, OpParams},
     types::{DType, Layout, Shape, SymbolicLayout},
 };
+
+// Re-exports
+pub use capture::{CaptureBoard, CaptureBoardId};
 
 /// Snapshot-local tensor ID (normalized from runtime TensorId)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]

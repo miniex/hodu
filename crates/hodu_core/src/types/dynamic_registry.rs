@@ -1,7 +1,6 @@
+use super::dim::DynamicDimId;
 use std::cell::RefCell;
 use std::collections::HashMap;
-
-use super::dim::DynamicDimId;
 
 thread_local! {
     /// Thread-local registry for resolved dynamic dimensions

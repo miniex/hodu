@@ -1,9 +1,8 @@
-use smallvec::SmallVec;
-use std::fmt;
-
 use super::dim::Dim;
 use super::layout::Layout;
 use super::symbolic_shape::SymbolicShape;
+use smallvec::SmallVec;
+use std::fmt;
 
 /// Layout that can contain dynamic dimensions
 ///

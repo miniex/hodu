@@ -1,9 +1,11 @@
 pub mod prelude;
 
+// crates
 pub use hodu_core as core;
 pub use hodu_datasets as datasets;
 pub use hodu_nn as nn;
 
+// types
 pub use hodu_core::types::{
     bf16, bfloat16, f16, f32, f8e4m3, float16, float32, float8e4m3, half, i32, i8, int32, int8, u32, u8, uint32, uint8,
 };
