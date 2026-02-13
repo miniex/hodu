@@ -26,7 +26,7 @@ Built on **Rust's foundation of memory safety and zero-cost abstractions**, Hodu
 ### Requirements
 
 **Required**
-- Rust 1.90.0 or later (latest stable version recommended)
+- Rust 1.93.0 or later (latest stable version recommended)
 
 **Optional**
 - **OpenBLAS 0.3.30+** - For optimized linear algebra operations on CPU
