@@ -14,9 +14,6 @@ crates=(
     hodu_datasets
 
     hodu_internal
-
-    hodu_plugin
-    hodu_plugin_runtime
 )
 
 if [ -n "$(git status --porcelain)" ]; then
