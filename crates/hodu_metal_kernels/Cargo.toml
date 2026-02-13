@@ -6,7 +6,7 @@ license = "BSD-3-Clause"
 authors = ["Han Damin <miniex@daminstudio.net>"]
 edition = "2021"
 publish = true
-repository = "https://github.com/daminstudio/hodu"
+repository = "https://github.com/miniex/hodu"
 
 [features]
 

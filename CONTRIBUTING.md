@@ -25,7 +25,7 @@ hodu/
 ## Getting Started
 
 ```bash
-git clone https://github.com/daminstudio/hodu.git
+git clone https://github.com/miniex/hodu.git
 cd hodu
 cargo build
 cargo test
