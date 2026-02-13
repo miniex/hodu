@@ -11,5 +11,5 @@ repository = "https://github.com/miniex/hodu"
 [dependencies]
 proc-macro2 = { workspace = true }
 quote = { workspace = true }
-syn = { workspace = true }
-toml_edit = { workspace = true }
+syn = { workspace = true, features = ["full"] }
+toml_edit = { workspace = true, features = ["parse"] }

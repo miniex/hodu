@@ -9,11 +9,11 @@ publish = true
 repository = "https://github.com/miniex/hodu"
 
 [features]
-default = ["cudarc/no-std", "float8/cuda"]
-std = ["cudarc/std", "float8/cuda"]
+default = ["cudarc/no-std"]
+std = ["cudarc/std"]
 
 [dependencies]
-cudarc = { version = "0.17.7", default-features = false, features = [
+cudarc = { version = "0.19.2", default-features = false, features = [
     "f8",
     "f16",
     "cublas",
@@ -23,7 +23,7 @@ cudarc = { version = "0.17.7", default-features = false, features = [
     "dynamic-linking",
     "nvrtc"
 ] }
-float8 = { version = "0.4.2", default-features = false, features = [
+float8 = { version = "0.7.0", default-features = false, features = [
     "num-traits",
     "rand_distr",
 ] }

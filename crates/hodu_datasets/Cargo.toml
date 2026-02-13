@@ -14,5 +14,5 @@ serde = ["hodu_core/serde"]
 [dependencies]
 hodu_core = { workspace = true }
 hodu_datasets_macros = { workspace = true }
-rand = { workspace = true, features = ["small_rng"] }
+rand = { workspace = true }
 rand_distr = { workspace = true }

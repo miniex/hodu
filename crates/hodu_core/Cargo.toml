@@ -23,23 +23,23 @@ i64 = []
 openblas = ["hodu_cpu_kernels/openblas"]
 
 # optional device
-cuda = ["dep:hodu_cuda_kernels", "float8/cuda"]
+cuda = ["dep:hodu_cuda_kernels"]
 metal = ["metal-device", "dep:hodu_metal_kernels"]
 metal-device = []  # Device::Metal enum only, no runtime
 
 [dependencies]
 dashmap = { workspace = true }
-float8 = { workspace = true }
-half = { workspace = true }
+float8 = { workspace = true, features = ["num-traits", "rand_distr"] }
+half = { workspace = true, features = ["num-traits", "rand_distr"] }
 hodu_cpu_kernels = { workspace = true }
 hodu_cuda_kernels = { workspace = true, optional = true }
 hodu_metal_kernels = { workspace = true, optional = true }
 num-traits = { workspace = true }
 paste = { workspace = true }
-postcard = { workspace = true, optional = true }
+postcard = { workspace = true, optional = true, features = ["alloc"] }
 rand = { workspace = true }
 rand_distr = { workspace = true }
-serde = { workspace = true, optional = true }
+serde = { workspace = true, optional = true, features = ["derive"] }
 serde_json = { workspace = true, optional = true }
 serde_repr = { workspace = true, optional = true }
 smallvec = { workspace = true }

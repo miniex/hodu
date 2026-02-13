@@ -12,9 +12,9 @@ repository = "https://github.com/miniex/hodu"
 openblas = []
 
 [build-dependencies]
-cc = "1.2.48"
+cc = { workspace = true }
 
 [dependencies]
-float8 = { workspace = true }
-half = { workspace = true }
+float8 = { workspace = true, features = ["num-traits", "rand_distr"] }
+half = { workspace = true, features = ["num-traits", "rand_distr"] }
 paste = { workspace = true }
