@@ -1,3 +1,14 @@
+> [!IMPORTANT]
+> **This repository is archived.**
+> Hodu has been **redesigned and split** into two repositories under [**hodu-labs**](https://github.com/hodu-labs):
+>
+> - [**kurumi**](https://github.com/hodu-labs/kurumi) - the engine: IR, compiler, runtime, kernel stack, artifact format, and C ABI.
+> - [**hodu-rs**](https://github.com/hodu-labs/hodu-rs) - the Rust user framework (the `hodu` crate), a zero-cost layer over kurumi.
+>
+> The original monolithic design (eager execution + tape-based autograd) is preserved here, **read-only for reference**. The `hodu` crate on crates.io continues from hodu-rs.
+
+<!-- ARCHIVED - original README below -->
+
 # Hodu, a Rust ML toolkit
 
 [![Crates.io](https://img.shields.io/crates/v/hodu.svg)](https://crates.io/crates/hodu)
